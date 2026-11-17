@@ -16,6 +16,9 @@ db.exec([
 "CREATE TABLE IF NOT EXISTS candidates (id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES search_jobs(id) ON DELETE CASCADE, source_id TEXT NOT NULL REFERENCES sources(id), source_object_type TEXT NOT NULL, source_object_id TEXT NOT NULL, name TEXT, category TEXT, address TEXT, phone_raw TEXT, website_url TEXT, public_email TEXT, source_url TEXT NOT NULL, observed_at TEXT NOT NULL, raw_json TEXT NOT NULL, review_status TEXT NOT NULL DEFAULT 'pending', UNIQUE(job_id, source_id, source_object_type, source_object_id));",
 "CREATE INDEX IF NOT EXISTS idx_candidates_job ON candidates(job_id);",
 "CREATE INDEX IF NOT EXISTS idx_candidates_review ON candidates(review_status);"
+"CREATE TABLE IF NOT EXISTS field_observations (id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE, source_id TEXT NOT NULL REFERENCES sources(id), field_name TEXT NOT NULL, field_value TEXT NOT NULL, source_url TEXT NOT NULL, observed_at TEXT NOT NULL, source_timestamp TEXT, verification_status TEXT NOT NULL DEFAULT 'unverified', confidence REAL, UNIQUE(candidate_id, source_id, field_name, field_value));",
+"CREATE INDEX IF NOT EXISTS idx_field_observations_candidate ON field_observations(candidate_id, field_name);",
+"CREATE INDEX IF NOT EXISTS idx_field_observations_source ON field_observations(source_id, observed_at);"
 ].join("\n"));
 
 db.prepare("INSERT OR IGNORE INTO sources (id,name,terms_url,attribution,enabled,reviewed_at) VALUES (?,?,?,?,?,?)").run(
