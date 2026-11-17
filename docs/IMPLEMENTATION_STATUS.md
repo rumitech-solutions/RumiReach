@@ -15,6 +15,8 @@ RumiReach is now a local-first CSV business-lead workspace. The dashboard no lon
 - Each batch is committed independently. If a later batch fails, earlier batches remain saved; the incomplete import must be reviewed before retrying.
 - Candidate search, category/status filters, sorting and counts run server-side. The UI loads 25 rows per page rather than loading the whole database.
 - CSV export streams the entire filtered result set from the API; the browser does not build one giant export string.
+- A single shared WhatsApp draft is editable in the dashboard and saved in browser local storage. Business-name and category placeholders are personalized when a row's WhatsApp action is clicked.
+- The WhatsApp action opens `wa.me` with a prefilled message. The operator must review and press Send in WhatsApp; RumiReach does not send messages or automate outreach.
 - Website URL normalization and safe source URL fallback.
 - Field-level source observations are stored as unverified; imported data is not automatically represented as verified.
 - Dashboard supports CSV upload, record search, category and review-status filters, sorting, manual review status changes, and filtered CSV export.
@@ -26,7 +28,7 @@ RumiReach is now a local-first CSV business-lead workspace. The dashboard no lon
 - Live business discovery from OSM, Overpass, Nominatim, Overture or Google Places.
 - Automated Google Maps scraping or a scraper runner.
 - Website crawling/contact enrichment.
-- WhatsApp sending or automated outreach.
+- Automated WhatsApp sending, bulk messaging or automated outreach. Manual click-to-open WhatsApp drafts are implemented.
 - Hosted multi-tenant SaaS.
 
 Some legacy OSM/geography/tile source files, schema tables and historical documentation remain in the repository from the earlier prototype. They are not imported by the current API entrypoint and are not exposed in the current dashboard. Existing local SQLite data is not automatically deleted.
