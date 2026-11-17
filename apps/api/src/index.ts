@@ -5,7 +5,9 @@ import { db } from "./db";
 import { discoverBusinesses } from "./overpass";
 import { findFieldConflicts } from "./provenance";
 import { normalizeSourceUrl, normalizeWebsite, parseCsv } from "./csv";
-import { ensureMatchingSchema, resolveUnlinkedCandidates } from "./matching";\nimport { lookupPakistanCity } from "./geography";
+import { ensureMatchingSchema, resolveUnlinkedCandidates } from "./matching";
+import { lookupPakistanCity } from "./geography";
+import { planDiscoveryTiles } from "./tile_planner";
 
 ensureMatchingSchema();
 
@@ -31,28 +33,22 @@ app.get("/api/geography/lookup",async(request,reply)=>{
   }
 });
 app.post("/api/search",async(request,reply)=>{
-  const parsed=SearchRequestSchema.safeParse(request.body);
-  if(!parsed.success) return reply.code(400).send({error:"Invalid search request",details:parsed.error.flatten()});
-  const input=parsed.data;
-  const area=(input.bbox.north-input.bbox.south)*(input.bbox.east-input.bbox.west);
-  if(area<=0 || area>0.05) return reply.code(400).send({error:"Bounding box is invalid or too large. Maximum area is 0.05 square degrees."});
-  const source=db.prepare("SELECT enabled FROM sources WHERE id='osm_overpass'").get() as {enabled:number}|undefined;
-  if(!source?.enabled) return reply.code(403).send({error:"OSM source is disabled pending policy review."});
-  const jobId=randomUUID(),createdAt=new Date().toISOString();
-  db.prepare("INSERT INTO search_jobs (id,category,city,locality,bbox_south,bbox_west,bbox_north,bbox_east,source_id,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)").run(
-    jobId,input.category,input.city,input.locality,input.bbox.south,input.bbox.west,input.bbox.north,input.bbox.east,"osm_overpass","running",createdAt
-  );
-  try {
-    const result=await discoverBusinesses({jobId,bbox:input.bbox,maxResults:input.maxResults,category:input.category});
-    db.prepare("UPDATE search_jobs SET status='completed',candidate_count=?,source_timestamp=?,finished_at=? WHERE id=?").run(result.count,result.sourceTimestamp,new Date().toISOString(),jobId);
-    const matching=resolveUnlinkedCandidates();
-    return {jobId,status:"completed",candidateCount:result.count,matching,sourceTimestamp:result.sourceTimestamp,attribution:"© OpenStreetMap contributors — data available under the Open Database License (ODbL)"};
-  } catch(error) {
-    const message=error instanceof Error?error.message:"Unknown source error";
-    db.prepare("UPDATE search_jobs SET status='failed',error_message=?,finished_at=? WHERE id=?").run(message,new Date().toISOString(),jobId);
-    request.log.error({jobId,error:message},"Discovery job failed");
-    return reply.code(502).send({jobId,status:"failed",error:message});
-  }
+ const parsed=SearchRequestSchema.safeParse(request.body);
+ if(!parsed.success) return reply.code(400).send({error:"Invalid search request",details:parsed.error.flatten()});
+ const input=parsed.data;
+ let tiles;
+ try { tiles=planDiscoveryTiles(input.bbox); } catch(error) { return reply.code(400).send({error:error instanceof Error?error.message:"Invalid city boundary"}); }
+ const source=db.prepare("SELECT enabled FROM sources WHERE id='osm_overpass'").get() as {enabled:number}|undefined;
+ if(!source?.enabled) return reply.code(403).send({error:"OSM source is disabled pending policy review."});
+ const jobId=randomUUID(),createdAt=new Date().toISOString();
+ const createJob=db.transaction(()=>{
+  db.prepare("INSERT INTO search_jobs (id,category,city,locality,bbox_south,bbox_west,bbox_north,bbox_east,source_id,status,created_at,max_results) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").run(jobId,input.category,input.city,input.locality,input.bbox.south,input.bbox.west,input.bbox.north,input.bbox.east,"osm_overpass","queued",createdAt,input.maxResults);
+  const insert=db.prepare("INSERT INTO discovery_tiles (id,job_id,tile_index,bbox_south,bbox_west,bbox_north,bbox_east,status) VALUES (?,?,?,?,?,?,?,?)");
+  for(const tile of tiles) insert.run(randomUUID(),jobId,tile.tileIndex,tile.south,tile.west,tile.north,tile.east,"queued");
+ });
+ createJob();
+ void processDiscoveryJob(jobId);
+ return reply.code(202).send({jobId,status:"queued",totalTiles:tiles.length,maxResults:input.maxResults,attribution:"© OpenStreetMap contributors — data available under the Open Database License (ODbL)"});
 });
 app.post("/api/import/csv",async(request,reply)=>{
   const body=request.body as {filename?:string;csv?:string};
@@ -110,6 +106,66 @@ app.patch("/api/candidates/:id/review",async(request,reply)=>{
   const result=db.prepare("UPDATE candidates SET review_status=? WHERE id=?").run(body.status,params.id);
   if(!result.changes) return reply.code(404).send({error:"Candidate not found."});
   return {ok:true};
+});
+const runningJobs=new Set<string>();
+async function processDiscoveryJob(jobId:string):Promise<void>{
+ if(runningJobs.has(jobId)) return;
+ runningJobs.add(jobId);
+ try {
+  const job=db.prepare("SELECT category,max_results,candidate_count,source_timestamp FROM search_jobs WHERE id=?").get(jobId) as {category:string;max_results:number;candidate_count:number;source_timestamp:string|null}|undefined;
+  if(!job) return;
+  db.prepare("UPDATE search_jobs SET status='running',error_message=NULL,finished_at=NULL WHERE id=?").run(jobId);
+  const next=db.prepare("SELECT * FROM discovery_tiles WHERE job_id=? AND status='queued' ORDER BY tile_index");
+  const updateTile=db.prepare("UPDATE discovery_tiles SET status=?,candidate_count=?,error_message=?,started_at=COALESCE(started_at,?),finished_at=? WHERE id=?");
+  let total=job.candidate_count;
+  let sourceTimestamp=job.source_timestamp;
+  for(const tile of next.iterate(jobId) as Iterable<{id:string;bbox_south:number;bbox_west:number;bbox_north:number;bbox_east:number}>){
+   if(total>=job.max_results) { updateTile.run("skipped",0,"Job result limit reached",null,new Date().toISOString(),tile.id); continue; }
+   const startedAt=new Date().toISOString();
+   updateTile.run("running",0,null,startedAt,null,tile.id);
+   try {
+    const result=await discoverBusinesses({jobId,bbox:{south:tile.bbox_south,west:tile.bbox_west,north:tile.bbox_north,east:tile.bbox_east},maxResults:job.max_results-total,category:job.category});
+    total+=result.count;
+    if(result.sourceTimestamp) sourceTimestamp=result.sourceTimestamp;
+    updateTile.run("completed",result.count,null,startedAt,new Date().toISOString(),tile.id);
+    db.prepare("UPDATE search_jobs SET candidate_count=?,source_timestamp=? WHERE id=?").run(total,sourceTimestamp,jobId);
+   } catch(error) {
+    const message=error instanceof Error?error.message:"Unknown tile error";
+    updateTile.run("failed",0,message,startedAt,new Date().toISOString(),tile.id);
+    db.prepare("UPDATE search_jobs SET status='failed',candidate_count=?,error_message=?,finished_at=? WHERE id=?").run(total,message,new Date().toISOString(),jobId);
+    return;
+   }
+  }
+  const remaining=(db.prepare("SELECT COUNT(*) AS count FROM discovery_tiles WHERE job_id=? AND status IN ('queued','failed','running')").get(jobId) as {count:number}).count;
+  if(remaining===0){
+   db.prepare("UPDATE search_jobs SET status='completed',candidate_count=?,finished_at=? WHERE id=?").run(total,new Date().toISOString(),jobId);
+   resolveUnlinkedCandidates();
+  } else {
+   db.prepare("UPDATE search_jobs SET status='failed',candidate_count=?,error_message=?,finished_at=? WHERE id=?").run(total,"Some tiles remain incomplete. Resume the job to retry failed tiles.",new Date().toISOString(),jobId);
+  }
+ } finally { runningJobs.delete(jobId); }
+}
+function getJobProgress(jobId:string){
+ const job=db.prepare("SELECT id,category,city,locality,status,candidate_count,max_results,error_message,source_timestamp,created_at,finished_at FROM search_jobs WHERE id=?").get(jobId);
+ if(!job) return null;
+ const counts=db.prepare("SELECT COUNT(*) AS totalTiles,SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completedTiles,SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failedTiles,SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END) AS queuedTiles,SUM(CASE WHEN status='skipped' THEN 1 ELSE 0 END) AS skippedTiles FROM discovery_tiles WHERE job_id=?").get(jobId);
+ return {...job,...counts,tiles:db.prepare("SELECT tile_index,status,candidate_count,error_message FROM discovery_tiles WHERE job_id=? ORDER BY tile_index").all(jobId)};
+}
+app.get("/api/jobs/:id",async(request,reply)=>{
+ const {id}=request.params as {id:string};
+ const progress=getJobProgress(id);
+ return progress?progress:reply.code(404).send({error:"Job not found."});
+});
+app.post("/api/jobs/:id/resume",async(request,reply)=>{
+ const {id}=request.params as {id:string};
+ const job=db.prepare("SELECT status FROM search_jobs WHERE id=?").get(id) as {status:string}|undefined;
+ if(!job) return reply.code(404).send({error:"Job not found."});
+ if(runningJobs.has(id) || job.status==="running") return reply.code(409).send({error:"This job is already running."});
+ const retry=db.prepare("UPDATE discovery_tiles SET status='queued',error_message=NULL,started_at=NULL,finished_at=NULL WHERE job_id=? AND status='failed'").run(id);
+ if(!retry.changes) return reply.code(409).send({error:"No failed tiles are available to retry."});
+ db.prepare("UPDATE search_jobs SET status='queued',error_message=NULL,finished_at=NULL WHERE id=?").run(id);
+ void processDiscoveryJob(id);
+ return {jobId:id,status:"queued",retriedTiles:retry.changes};
 });
 app.get("/api/jobs",async()=>db.prepare("SELECT id,category,city,locality,status,candidate_count,error_message,source_timestamp,created_at,finished_at FROM search_jobs ORDER BY created_at DESC LIMIT 100").all());
 app.listen({host:HOST,port:PORT}).catch(error=>{app.log.error(error);process.exit(1);});
