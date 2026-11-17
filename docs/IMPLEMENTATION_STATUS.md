@@ -104,4 +104,4 @@ The local database is stored under the Windows user's LocalAppData folder in `Ru
 - Dashboard now polls tile progress and exposes a retry action after a failed job.
 - Tests cover tile boundaries, remainder edges, invalid extents and the 500-tile cap.
 - This is bounded, resumable tile discovery—not a promise of complete city coverage. It still depends on OSM tagging density, Overpass availability, selected boundary quality and the per-job result cap. The tile cap can require the operator to choose a smaller locality.
-- Current job processing is local to one API process. Multi-instance distributed locking, pause/cancel controls, durable automatic startup resumption, per-city coverage analytics and additional data sources remain future work.
+- Current job processing is local to one API process. Queued jobs restart automatically after API startup; jobs interrupted mid-tile are marked failed and can be resumed from job history. Multi-instance distributed locking, pause/cancel controls, per-city coverage analytics and additional data sources remain future work.
