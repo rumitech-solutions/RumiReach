@@ -144,5 +144,4 @@ export function ensureMatchingSchema(): void {
       reasons_json TEXT NOT NULL, merged_at TEXT NOT NULL
     );
   `);
-  resolveUnlinkedCandidates();
 }
