@@ -14,7 +14,7 @@ RumiReach is now a local-first CSV business-lead workspace. The dashboard no lon
 - CSV files are read incrementally with the browser File Stream API and sent to the API in 500-row batches. There is no application-defined total row-count or file-size cap; practical limits depend on available RAM, disk space, browser and SQLite processing time.
 - Each batch is committed independently. If a later batch fails, earlier batches remain saved; the incomplete import must be reviewed before retrying.
 - Candidate search, category/status filters, sorting and counts run server-side. The UI loads 25 rows per page rather than loading the whole database.
-- Dashboard CSV export currently exports the visible page only.
+- CSV export streams the entire filtered result set from the API; the browser does not build one giant export string.
 - Website URL normalization and safe source URL fallback.
 - Field-level source observations are stored as unverified; imported data is not automatically represented as verified.
 - Dashboard supports CSV upload, record search, category and review-status filters, sorting, manual review status changes, and filtered CSV export.
