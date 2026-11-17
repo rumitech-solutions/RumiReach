@@ -5,17 +5,15 @@ import { findFieldConflicts } from "./provenance";
 import { normalizeSourceUrl, normalizeWebsite, parseCsv } from "./csv";
 import { ensureMatchingSchema, resolveUnlinkedCandidates } from "./matching";
 ensureMatchingSchema();
-const app=Fastify({logger:true,bodyLimit:2_000_000});
+const app=Fastify({logger:true,bodyLimit:Number.MAX_SAFE_INTEGER});
 const HOST="127.0.0.1",PORT=Number(process.env.PORT||4317);
 app.get("/api/health",async()=>({ok:true,app:"RumiReach",version:"0.2.0"}));
-app.get("/api/candidates",async()=>db.prepare("SELECT id,job_id,source_object_type,source_object_id,name,category,address,phone_raw,website_url,public_email,source_url,observed_at,review_status FROM candidates WHERE source_id='user_csv_import' ORDER BY observed_at DESC LIMIT 5000").all());
+app.get("/api/candidates",async()=>db.prepare("SELECT id,job_id,source_object_type,source_object_id,name,category,address,phone_raw,website_url,public_email,source_url,observed_at,review_status FROM candidates WHERE source_id='user_csv_import' ORDER BY observed_at DESC").all());
 app.post("/api/import/csv",async(request,reply)=>{
  const body=request.body as{filename?:string;csv?:string};
  if(typeof body?.csv!=="string"||!body.csv.trim())return reply.code(400).send({error:"Provide CSV text in the csv field."});
- if(Buffer.byteLength(body.csv,"utf8")>1_500_000)return reply.code(413).send({error:"CSV exceeds the 1.5 MB import limit."});
  const filename=(body.filename||"business-import.csv").replace(/[^a-zA-Z0-9._-]/g,"_").slice(0,100)||"business-import.csv";
  let rows;try{rows=parseCsv(body.csv);}catch(error){return reply.code(400).send({error:error instanceof Error?error.message:"Invalid CSV."});}
- if(rows.length>5000)return reply.code(413).send({error:"CSV exceeds the 5,000 data-row limit."});
  const batchId=randomUUID(),jobId=randomUUID(),createdAt=new Date().toISOString(),sourceId="user_csv_import";
  const sourceUrlFor=(row:Record<string,string>,index:number)=>normalizeSourceUrl(row.source_url||"","csv-import://"+encodeURIComponent(filename)+"#row="+(index+2));
  const insertCandidate=db.prepare("INSERT INTO candidates (id,job_id,source_id,source_object_type,source_object_id,name,category,address,phone_raw,website_url,public_email,source_url,observed_at,raw_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
@@ -38,7 +36,7 @@ app.post("/api/import/csv",async(request,reply)=>{
  });
  try{run();}catch(error){request.log.error(error,"CSV import failed");return reply.code(500).send({error:"CSV import failed; no partial batch was committed."});}
  const matching=resolveUnlinkedCandidates();
- return{batchId,jobId,sourceId,filename,status:"completed",imported,skipped,invalidWebsite,matching,limit:5000,notice:"Imported values are unverified. Review original source terms before reuse."};
+ return{batchId,jobId,sourceId,filename,status:"completed",imported,skipped,invalidWebsite,matching,notice:"Imported values are unverified. Review original source terms before reuse."};
 });
 app.get("/api/profiles",async()=>db.prepare("SELECT p.id,p.canonical_name,p.category,p.address,p.phone_raw,p.website_url,p.public_email,p.created_at,p.updated_at,COUNT(s.candidate_id) AS source_count FROM business_profiles p LEFT JOIN business_profile_sources s ON s.profile_id=p.id GROUP BY p.id ORDER BY p.updated_at DESC LIMIT 500").all());
 app.get("/api/candidates/:id/provenance",async(request,reply)=>{
