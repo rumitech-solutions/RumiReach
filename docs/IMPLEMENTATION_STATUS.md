@@ -4,7 +4,7 @@
 
 The repository contains an early Goal 1 discovery prototype. It is not a production-ready release and it does not yet perform nationwide ingestion.
 
-**CI:** GitHub Actions is running against the latest provenance changes. Windows installation/runtime verification remains pending.
+**CI:** The provenance implementation passed GitHub Actions typecheck, tests, and build. The CSV import API and frontend have also been committed; their latest CI run is being checked. Windows installation/runtime verification remains pending.
 
 ## Implemented in source
 
@@ -17,6 +17,9 @@ The repository contains an early Goal 1 discovery prototype. It is not a product
 - Field-level provenance table for source-specific values, collection timestamps, upstream timestamps, verification status, and optional confidence.
 - OSM adapter records individual field observations without marking them verified.
 - Candidate provenance API returns observations and conflicting values for human review.
+- CSV parser handles quoted fields, escaped quotes, CRLF, duplicate headers, and malformed quotes.
+- Local CSV import API accepts up to 5,000 rows / 1.5 MB, creates an import job, and stores each field as unverified source provenance.
+- Dashboard has a CSV import panel and reloads imported records into candidate review.
 - Basic candidate review status changes.
 - GitHub Actions typecheck/build workflow.
 
@@ -27,13 +30,13 @@ The repository contains an early Goal 1 discovery prototype. It is not a product
 - Pause/resume/cancel and per-tile progress UI/API.
 - Local Pakistan/regional OSM extract importer.
 - Stable-ID deduplication across overlapping tiles and sources.
-- Cross-source ingestion adapters beyond the current OSM discovery adapter.
+- Additional external source adapters beyond OSM and operator-supplied CSV.
 - Cross-source entity matching and duplicate suggestions.
 - Source policy version snapshots.
 - Pakistani phone normalization.
 - Candidate-to-lead promotion and lead management.
 - CSV export and data-quality report.
-- Automated tests, Windows installation verification, backup/restore.
+- Full API integration tests, Windows installation verification, backup/restore.
 - Complete security review of source ingestion and UI.
 
 ## Important limitations
@@ -61,10 +64,10 @@ The local database is stored under the Windows user's LocalAppData folder in `Ru
 
 ## Next implementation order
 
-1. Add automated tests for field observations, provenance retrieval, and conflict detection.
-2. Implement an auditable user CSV import adapter.
-3. Add cross-source entity matching with reviewable match reasons.
-4. Add a versioned Pakistan geography registry with source/licence metadata.
-5. Add a deterministic tile planner and strict tile-size validation.
-6. Add persistent tile tasks, checkpoints, retry-after handling and cancellation.
-7. Add stable-source-ID deduplication, regional quality metrics, and a local OSM extract importer.
+1. Add reviewable cross-source entity matching and duplicate suggestions; do not merge on name alone.
+2. Add import batch management, CSV export, and field-level quality reporting.
+3. Add a versioned Pakistan geography registry with source/licence metadata.
+4. Add a deterministic tile planner and strict tile-size validation.
+5. Add persistent tile tasks, checkpoints, retry-after handling and cancellation.
+6. Add stable-source-ID deduplication, regional quality metrics, and a local OSM extract importer.
+7. Add a separately reviewed business-website enrichment adapter and permitted government/open-data adapters.
