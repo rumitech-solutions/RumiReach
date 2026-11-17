@@ -47,7 +47,7 @@ export function parseCityResults(rows: NominatimResult[]): CityBoundary[] {
 }
 
 export async function lookupPakistanCity(city: string): Promise<CityBoundary[]> {
-  const normalized = city.trim().replace(/\\s+/g," ").toLocaleLowerCase("en");
+  const normalized = city.trim().replace(/\s+/g," ").toLocaleLowerCase("en");
   if (normalized.length < 2 || normalized.length > 80) throw new Error("Enter a city name between 2 and 80 characters.");
   const key = "pk:" + normalized;
   const cached = db.prepare("SELECT result_json FROM geocode_cache WHERE query_key=?").get(key) as {result_json:string}|undefined;
