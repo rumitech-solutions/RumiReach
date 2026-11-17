@@ -108,8 +108,13 @@ app.patch("/api/candidates/:id/review",async(request,reply)=>{
   return {ok:true};
 });
 const runningJobs=new Set<string>();
+const queuedJobs=new Set<string>();
 let discoveryQueue:Promise<void>=Promise.resolve();
-function enqueueDiscoveryJob(jobId:string){discoveryQueue=discoveryQueue.then(()=>processDiscoveryJob(jobId)).catch(error=>app.log.error({jobId,error},"Queued discovery job failed"));}
+function enqueueDiscoveryJob(jobId:string){
+ if(queuedJobs.has(jobId)||runningJobs.has(jobId)) return;
+ queuedJobs.add(jobId);
+ discoveryQueue=discoveryQueue.then(()=>{queuedJobs.delete(jobId);return processDiscoveryJob(jobId);}).catch(error=>app.log.error({jobId,error},"Queued discovery job failed"));
+}
 async function processDiscoveryJob(jobId:string):Promise<void>{
  if(runningJobs.has(jobId)) return;
  runningJobs.add(jobId);
@@ -162,7 +167,7 @@ app.post("/api/jobs/:id/resume",async(request,reply)=>{
  const {id}=request.params as {id:string};
  const job=db.prepare("SELECT status FROM search_jobs WHERE id=?").get(id) as {status:string}|undefined;
  if(!job) return reply.code(404).send({error:"Job not found."});
- if(runningJobs.has(id) || job.status==="running") return reply.code(409).send({error:"This job is already running."});
+ if(runningJobs.has(id) || queuedJobs.has(id) || job.status==="running") return reply.code(409).send({error:"This job is already queued or running."});
  const retry=db.prepare("UPDATE discovery_tiles SET status='queued',error_message=NULL,started_at=NULL,finished_at=NULL WHERE job_id=? AND status IN ('failed','running')").run(id);
  const queued=(db.prepare("SELECT COUNT(*) AS count FROM discovery_tiles WHERE job_id=? AND status='queued'").get(id) as {count:number}).count;
  if(!queued) return reply.code(409).send({error:"No queued or failed tiles are available to retry."});
@@ -174,4 +179,6 @@ app.get("/api/jobs",async()=>{
  const recent=db.prepare("SELECT id FROM search_jobs ORDER BY created_at DESC LIMIT 30").all() as Array<{id:string}>;
  return recent.map(job=>{const progress=getJobProgress(job.id);if(!progress)return null;const {tiles,...summary}=progress;return summary;});
 });
+const pendingJobs=db.prepare("SELECT id FROM search_jobs WHERE status='queued' ORDER BY created_at").all() as Array<{id:string}>;
+for(const job of pendingJobs) enqueueDiscoveryJob(job.id);
 app.listen({host:HOST,port:PORT}).catch(error=>{app.log.error(error);process.exit(1);});
