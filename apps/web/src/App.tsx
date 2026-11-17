@@ -1,7 +1,8 @@
 import {Fragment,useEffect,useState} from "react";
 type Candidate={id:string;name:string|null;category:string|null;address:string|null;phone_raw:string|null;website_url:string|null;source_url:string;review_status:string};
 type Profile={id:string;canonical_name:string|null;category:string|null;address:string|null;phone_raw:string|null;website_url:string|null;source_count:number};
-type Job={id:string;city:string;category:string;status:string;candidate_count:number;totalTiles:number;completedTiles:number;failedTiles:number;queuedTiles:number;error_message:string|null};\ntype Provenance={observations:Array<{id:string;field_name:string;field_value:string;source_id:string;source_url:string;observed_at:string;source_timestamp:string|null;verification_status:string;confidence:number|null}>;conflicts:Array<{field:string;values:string[]}>};
+type Job={id:string;city:string;category:string;status:string;candidate_count:number;totalTiles:number;completedTiles:number;failedTiles:number;queuedTiles:number;error_message:string|null};
+type Provenance={observations:Array<{id:string;field_name:string;field_value:string;source_id:string;source_url:string;observed_at:string;source_timestamp:string|null;verification_status:string;confidence:number|null}>;conflicts:Array<{field:string;values:string[]}>};
 export default function App(){
  const [city,setCity]=useState("Karachi"),[locality,setLocality]=useState(""),[category,setCategory]=useState("restaurant");
  const [south,setSouth]=useState(""),[west,setWest]=useState(""),[north,setNorth]=useState(""),[east,setEast]=useState("");
