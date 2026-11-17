@@ -6,7 +6,7 @@ RumiReach is a local-first CSV business-lead workspace by RumiTech Solutions. Im
 
 ## Current product scope
 
-1. Import CSV files (up to 5,000 rows / 1.5 MB per file).
+1. Import CSV imports have no application-defined row-count or file-size cap; practical limits depend on available memory and storage.
 2. Accept `name` or `business_name` as the required business-name header.
 3. Normalize website URLs and map common field names for category, address, phone, website, email and source URL.
 4. Store imported values locally as unverified source observations.
