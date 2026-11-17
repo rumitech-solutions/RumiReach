@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { Readable } from "node:stream";
 import { randomUUID } from "node:crypto";
 import { db } from "./db";
 import { findFieldConflicts } from "./provenance";
@@ -68,6 +69,35 @@ app.get("/api/candidates", async (request) => {
   const categories = db.prepare("SELECT DISTINCT category FROM candidates WHERE source_id = ? AND category IS NOT NULL ORDER BY category COLLATE NOCASE").all(IMPORT_SOURCE) as Array<{ category: string }>;
   const stats = db.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN review_status='accepted' THEN 1 ELSE 0 END) AS accepted, SUM(CASE WHEN review_status='pending' THEN 1 ELSE 0 END) AS pending, SUM(CASE WHEN phone_raw IS NOT NULL AND phone_raw != '' THEN 1 ELSE 0 END) AS withPhone, SUM(CASE WHEN website_url IS NOT NULL AND website_url != '' THEN 1 ELSE 0 END) AS withWebsite FROM candidates WHERE source_id = ?").get(IMPORT_SOURCE);
   return { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize), categories: categories.map(x => x.category), stats };
+});
+
+app.get("/api/candidates/export", async (request, reply) => {
+  const q = request.query as { search?: string; category?: string; status?: string; sort?: string };
+  const search = (q.search || "").trim().slice(0, 200);
+  const category = (q.category || "").trim().slice(0, 100);
+  const status = ["pending", "accepted", "rejected", "needs_review"].includes(q.status || "") ? q.status! : "";
+  const where = ["source_id = ?"];
+  const params: string[] = [IMPORT_SOURCE];
+  if (search) {
+    where.push("(name LIKE ? OR category LIKE ? OR address LIKE ? OR phone_raw LIKE ? OR website_url LIKE ? OR public_email LIKE ?)");
+    const term = "%" + search + "%";
+    params.push(term, term, term, term, term, term);
+  }
+  if (category) { where.push("category = ?"); params.push(category); }
+  if (status) { where.push("review_status = ?"); params.push(status); }
+  const order = q.sort === "name" ? "name COLLATE NOCASE ASC" : q.sort === "category" ? "category COLLATE NOCASE ASC" : "observed_at DESC";
+  const statement = db.prepare("SELECT name,category,address,phone_raw,website_url,public_email,source_url,review_status FROM candidates WHERE " + where.join(" AND ") + " ORDER BY " + order);
+  const cell = (value: unknown) => {
+    const text = String(value ?? "");
+    return /[",\\r\\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+  };
+  function* csvLines() {
+    yield "\\uFEFFname,category,address,phone,website,email,source_url,review_status\\r\\n";
+    for (const row of statement.iterate(...params) as Iterable<Record<string, unknown>>) {
+      yield [row.name,row.category,row.address,row.phone_raw,row.website_url,row.public_email,row.source_url,row.review_status].map(cell).join(",") + "\\r\\n";
+    }
+  }
+  return reply.type("text/csv; charset=utf-8").header("Content-Disposition", 'attachment; filename="rumireach-leads.csv"').send(Readable.from(csvLines()));
 });
 
 app.post("/api/import/csv/start", async (request, reply) => {
