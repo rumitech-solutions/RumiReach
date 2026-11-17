@@ -7,10 +7,10 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w @rumireach/api\" \"npm run dev -w @rumireach/web\"",
+    "dev": "npm run build -w @rumireach/shared && concurrently -n api,web -c blue,green \"npm run dev -w @rumireach/api\" \"npm run dev -w @rumireach/web\"",
     "build": "npm run build -w @rumireach/shared && npm run build -w @rumireach/api && npm run build -w @rumireach/web",
     "test": "npm run test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run build -w @rumireach/shared && npm run typecheck -w @rumireach/api && npm run typecheck -w @rumireach/web"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
