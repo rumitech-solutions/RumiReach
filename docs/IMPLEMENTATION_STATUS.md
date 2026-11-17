@@ -15,7 +15,7 @@ RumiReach is now a local-first CSV business-lead workspace. The dashboard no lon
 - Website URL normalization and safe source URL fallback.
 - Field-level source observations are stored as unverified; imported data is not automatically represented as verified.
 - Dashboard supports CSV upload, record search, category and review-status filters, sorting, manual review status changes, and filtered CSV export.
-- Candidate list API returns up to 5,000 latest records.
+- Candidate list API returns all imported CSV records.
 - Existing identity matching can group high-confidence duplicate records while retaining original source records.
 
 ## Not part of the active product
