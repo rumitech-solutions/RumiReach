@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { SearchRequestSchema } from "@rumireach/shared";
 import { db } from "./db";
 import { discoverRestaurants } from "./overpass";
+import { findFieldConflicts } from "./provenance";
 
 const app = Fastify({logger:true,bodyLimit:32768});
 const HOST = "127.0.0.1";
@@ -42,12 +43,7 @@ app.get("/api/candidates/:id/provenance",async(request,reply)=>{
   const candidate=db.prepare("SELECT id,name,category,address,phone_raw,website_url,public_email,source_url,observed_at FROM candidates WHERE id=?").get(params.id);
   if(!candidate) return reply.code(404).send({error:"Candidate not found."});
   const observations=db.prepare("SELECT id,field_name,field_value,source_id,source_url,observed_at,source_timestamp,verification_status,confidence FROM field_observations WHERE candidate_id=? ORDER BY field_name, observed_at DESC").all(params.id) as Array<{field_name:string;field_value:string}>;
-  const grouped=new Map<string,Set<string>>();
-  for(const item of observations){
-    if(!grouped.has(item.field_name)) grouped.set(item.field_name,new Set());
-    grouped.get(item.field_name)!.add(item.field_value);
-  }
-  const conflicts=[...grouped.entries()].filter(([,values])=>values.size>1).map(([field,values])=>({field,values:[...values]}));
+  const conflicts=findFieldConflicts(observations);
   return {candidate,observations,conflicts};
 });
 app.patch("/api/candidates/:id/review",async(request,reply)=>{
