@@ -170,5 +170,8 @@ app.post("/api/jobs/:id/resume",async(request,reply)=>{
  enqueueDiscoveryJob(id);
  return {jobId:id,status:"queued",retriedTiles:retry.changes,queuedTiles:queued};
 });
-app.get("/api/jobs",async()=>db.prepare("SELECT id,category,city,locality,status,candidate_count,error_message,source_timestamp,created_at,finished_at FROM search_jobs ORDER BY created_at DESC LIMIT 100").all());
+app.get("/api/jobs",async()=>{
+ const recent=db.prepare("SELECT id FROM search_jobs ORDER BY created_at DESC LIMIT 30").all() as Array<{id:string}>;
+ return recent.map(job=>getJobProgress(job.id));
+});
 app.listen({host:HOST,port:PORT}).catch(error=>{app.log.error(error);process.exit(1);});
