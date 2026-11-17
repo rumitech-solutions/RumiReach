@@ -72,6 +72,95 @@ A country-wide run must have checkpoints, retry-after handling, rate limits, ded
 6. Store only relevant public business information; do not harvest personal profiles or private contact details.
 7. Public contact information is not consent for WhatsApp marketing. Outreach remains human-reviewed and consent-gated.
 
+
+## Unified multi-source business profiles
+
+The product should present one useful business profile even when its information comes from several independent sources. This is a **source-aware aggregation layer**, not a process that blindly overwrites one source with another.
+
+### How a combined profile works
+
+1. **Collect source records independently.** Keep the original source record and its stable source identifier (for example, OSM element type + OSM ID, or an import batch + row identifier).
+2. **Normalize fields.** Convert source-specific names and formats into a shared schema: business name, category, coordinates/address, phone, website, email, opening hours and other supported fields.
+3. **Resolve entity identity.** Determine whether two source records refer to the same real-world business. Use strong signals first (same official website, normalized phone, exact source cross-reference); use name + proximity only as a match suggestion. Do not automatically merge ambiguous matches.
+4. **Build a canonical profile.** Show the best-supported value for each field while retaining every source observation behind it.
+5. **Expose provenance and freshness.** A user can see where a value came from, when RumiReach observed it, whether it was verified, and whether another source disagrees.
+6. **Refresh independently.** Updating one source must not erase a value contributed by another source.
+
+### Field-level provenance
+
+Each field observation should retain at least:
+
+- canonical business/entity ID;
+- field key and normalized value;
+- original/raw value when useful for audit;
+- source ID and source-record ID;
+- source URL or dataset reference where permitted;
+- `source_updated_at` when the source supplies it (nullable);
+- `fetched_at` (when RumiReach retrieved the record);
+- `observed_at` (when the source says the fact was observed, if known);
+- verification state: `unverified`, `format_validated`, `source_confirmed`, or `human_verified`;
+- match/merge decision and reviewer where applicable.
+
+Do not invent a source update date. If it is unavailable, display “retrieved on” or “first seen by RumiReach” rather than implying that the business updated the information on that date.
+
+### Conflict handling and display rules
+
+- Keep conflicting values as separate observations; never silently discard them.
+- Prefer a recent, directly business-controlled source for contact details only when its ownership and relevance are clear.
+- A format check (such as a valid-looking phone number) is not proof that the number belongs to the business.
+- A value from multiple independent sources can be marked corroborated, but repeated copies of the same upstream dataset do not count as independent confirmation.
+- If evidence is tied or weak, show “needs review” instead of selecting a winner.
+- Let reviewers correct a canonical value without deleting its source history.
+- Show field-level freshness and verification labels, not one misleading “verified” badge for the entire profile.
+
+### Suggested profile presentation
+
+The business page should show:
+- **Current profile:** the selected display values.
+- **Sources:** source names and links/references where allowed.
+- **Last retrieved:** latest RumiReach fetch time per source.
+- **Last observed / source updated:** only when the source provides a trustworthy date.
+- **Verification:** unverified, format checked, source confirmed, or human verified.
+- **Conflicts:** alternate values and the reason they were not selected.
+- **Coverage:** which useful fields are present or missing.
+
+### Matching safeguards
+
+Use a staged matching process:
+
+1. Exact stable source ID: same source object, same record.
+2. Strong cross-source evidence: same normalized official website or phone plus compatible name/location.
+3. Candidate match: normalized name + geographic proximity + category; queue for review.
+4. No reliable match: keep as separate businesses.
+
+Never merge solely because two businesses have similar names or share a building. Preserve the original source records and make merge/unmerge decisions auditable.
+
+### Data model direction
+
+Implement this as separate concepts rather than one flat row:
+
+- `sources`: source registry and licence/policy metadata.
+- `source_records`: immutable or versioned source snapshots with stable external identity.
+- `businesses`: canonical business profiles.
+- `business_source_links`: reviewed or suggested links between canonical businesses and source records.
+- `field_observations`: field-level values, provenance, timestamps and verification state.
+- `merge_reviews`: candidate matches, evidence, decision and reviewer audit trail.
+
+This is the target model, not a claim that all these tables already exist in the current prototype. Introduce it through additive migrations and tests; preserve the current bbox discovery workflow while migrating.
+
+### Important date distinction
+
+The UI must distinguish these dates:
+
+| Label | Meaning |
+|---|---|
+| Source updated | Date explicitly supplied by the source; often unavailable |
+| Observed | Date the source says the fact was observed; may be unavailable |
+| Retrieved by RumiReach | Date/time RumiReach fetched the information |
+| Human verified | Date/time a reviewer checked the information |
+
+A fresh retrieval does not prove the underlying business information is fresh. For example, fetching an old directory page today only proves that RumiReach retrieved that page today.
+
 ## References
 
 - Scrapy architecture: https://docs.scrapy.org/en/master/topics/architecture.html
