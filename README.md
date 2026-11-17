@@ -4,17 +4,17 @@
 
 An intelligent client-acquisition workspace by RumiTech Solutions. RumiReach helps discover businesses from permitted public sources, organize and verify business information, qualify potential clients, and manage respectful outreach.
 
-**Status:** initial Goal 1 discovery prototype committed; Windows installation and runtime validation are still pending.
+**Status:** early Goal 1 discovery prototype committed; nationwide ingestion design is documented, but nationwide execution is not implemented yet. Windows installation and runtime validation are pending.
 
 ## Product stages
-1. Discover and collect business leads.
+1. Discover and collect business leads across Pakistan.
 2. Verify data quality and qualify opportunities.
 3. Prepare compliant, human-reviewed outreach.
 4. Audit public websites and recommend services using evidence.
 5. Manage sales pipeline, follow-ups, proposals, and outcomes.
 
-## Initial pilot
-Target: 50 unique restaurants in Gulshan-e-Iqbal, Karachi. This is a validation target, not a guaranteed source yield. The first experiment uses OpenStreetMap data subject to ODbL attribution and Overpass usage limits.
+## Geographic scope
+The intended product scope is **all of Pakistan**: provinces, territories, cities, towns and localities, subject to the coverage and permitted use of available sources. The earlier Gulshan-e-Iqbal 50-record target is no longer the product boundary. Nationwide coverage will be rolled out in measured, resumable geographic batches; no complete-directory claim is made.
 
 ## Principles
 - Zero paid API/subscription dependency for the initial local MVP.
@@ -30,7 +30,8 @@ Target: 50 unique restaurants in Gulshan-e-Iqbal, Karachi. This is a validation 
 - [PRD](docs/PRD.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Implementation status](docs/IMPLEMENTATION_STATUS.md)
-- [Pilot area definition](docs/PILOT_AREA.md)
+- [Pakistan-wide scope](docs/PILOT_AREA.md)
+- [Data acquisition strategy](docs/DATA_ACQUISITION_STRATEGY.md)
 - [Data sources and compliance](docs/DATA_SOURCES_AND_COMPLIANCE.md)
 - [Data model](docs/DATA_MODEL.md)
 - [Security and privacy](docs/SECURITY_AND_PRIVACY.md)
