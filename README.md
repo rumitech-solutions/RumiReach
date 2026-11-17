@@ -11,8 +11,9 @@ RumiReach is a local-first CSV business-lead workspace by RumiTech Solutions. Im
 3. Normalize website URLs and map common field names for category, address, phone, website, email and source URL.
 4. Store imported values locally as unverified source observations.
 5. Search and filter on the server, browse paginated results, manually review, and export the full filtered result set through a streamed CSV response.
+6. Edit one shared WhatsApp message draft; open a selected business chat with the message prefilled for the operator to review and send manually. The draft is saved in the current browser.
 
-The dashboard is CSV-first. Large files are read incrementally in the browser and committed in batches, so the full CSV does not need to be held in memory at once. If a batch fails, previously committed batches remain saved and should be checked before retrying. It does not perform live business discovery or connect to OSM, Overpass, Nominatim, Google Places, or other discovery providers. The repository retains some legacy schema/modules from the earlier prototype, but the current API and dashboard do not expose or run those discovery flows.
+The dashboard is CSV-first. Large files are read incrementally in the browser and committed in batches, so the full CSV does not need to be held in memory at once. If a batch fails, previously committed batches remain saved and should be checked before retrying. WhatsApp integration only opens a user-initiated chat with prefilled text; RumiReach does not send messages, automate outreach, or access WhatsApp accounts. The draft is stored in browser local storage. It does not perform live business discovery or connect to OSM, Overpass, Nominatim, Google Places, or other discovery providers. The repository retains some legacy schema/modules from the earlier prototype, but the current API and dashboard do not expose or run those discovery flows.
 
 ## Data-use responsibility
 
