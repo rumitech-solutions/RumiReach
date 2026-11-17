@@ -55,7 +55,7 @@ function addressFrom(tags: Record<string,string>): string | null {
 function safeWebsite(value?: string): string | null {
   if (!value) return null;
   try {
-    const candidate = new URL(/^https?:\\/\\//i.test(value) ? value : "https://" + value);
+    const candidate = new URL((value.startsWith("http://") || value.startsWith("https://")) ? value : "https://" + value);
     return candidate.protocol === "http:" || candidate.protocol === "https:" ? candidate.toString() : null;
   } catch { return null; }
 }
