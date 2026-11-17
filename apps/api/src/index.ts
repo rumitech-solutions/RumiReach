@@ -47,7 +47,7 @@ app.post("/api/search",async(request,reply)=>{
   for(const tile of tiles) insert.run(randomUUID(),jobId,tile.tileIndex,tile.south,tile.west,tile.north,tile.east,"queued");
  });
  createJob();
- void processDiscoveryJob(jobId);
+ enqueueDiscoveryJob(jobId);
  return reply.code(202).send({jobId,status:"queued",totalTiles:tiles.length,maxResults:input.maxResults,attribution:"© OpenStreetMap contributors — data available under the Open Database License (ODbL)"});
 });
 app.post("/api/import/csv",async(request,reply)=>{
@@ -107,7 +107,7 @@ app.patch("/api/candidates/:id/review",async(request,reply)=>{
   if(!result.changes) return reply.code(404).send({error:"Candidate not found."});
   return {ok:true};
 });
-const runningJobs=new Set<string>();
+const runningJobs=new Set<string>();\nlet discoveryQueue:Promise<void>=Promise.resolve();\nfunction enqueueDiscoveryJob(jobId:string){discoveryQueue=discoveryQueue.then(()=>processDiscoveryJob(jobId)).catch(error=>app.log.error({jobId,error},"Queued discovery job failed"));}
 async function processDiscoveryJob(jobId:string):Promise<void>{
  if(runningJobs.has(jobId)) return;
  runningJobs.add(jobId);
@@ -165,7 +165,7 @@ app.post("/api/jobs/:id/resume",async(request,reply)=>{
  const queued=(db.prepare("SELECT COUNT(*) AS count FROM discovery_tiles WHERE job_id=? AND status='queued'").get(id) as {count:number}).count;
  if(!queued) return reply.code(409).send({error:"No queued or failed tiles are available to retry."});
  db.prepare("UPDATE search_jobs SET status='queued',error_message=NULL,finished_at=NULL WHERE id=?").run(id);
- void processDiscoveryJob(id);
+ enqueueDiscoveryJob(id);
  return {jobId:id,status:"queued",retriedTiles:retry.changes,queuedTiles:queued};
 });
 app.get("/api/jobs",async()=>db.prepare("SELECT id,category,city,locality,status,candidate_count,error_message,source_timestamp,created_at,finished_at FROM search_jobs ORDER BY created_at DESC LIMIT 100").all());
