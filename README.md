@@ -4,7 +4,7 @@
 
 An intelligent client-acquisition workspace by RumiTech Solutions. RumiReach helps discover businesses from permitted public sources, organize and verify business information, qualify potential clients, and manage respectful outreach.
 
-**Status:** documentation and research phase; no production collector or outreach automation is approved yet.
+**Status:** research baseline committed; Goal 1 implementation is next.
 
 ## Product stages
 1. Discover and collect business leads.
@@ -14,7 +14,7 @@ An intelligent client-acquisition workspace by RumiTech Solutions. RumiReach hel
 5. Manage sales pipeline, follow-ups, proposals, and outcomes.
 
 ## Initial pilot
-Target: 50 unique restaurants in Gulshan-e-Iqbal, Karachi. This is a validation target, not a guaranteed source yield.
+Target: 50 unique restaurants in Gulshan-e-Iqbal, Karachi. This is a validation target, not a guaranteed source yield. The first experiment uses OpenStreetMap data subject to ODbL attribution and Overpass usage limits.
 
 ## Principles
 - Zero paid API/subscription dependency for the initial local MVP.
@@ -24,6 +24,7 @@ Target: 50 unique restaurants in Gulshan-e-Iqbal, Karachi. This is a validation 
 - Public contact information is not consent for marketing messages.
 - Human review before outreach; no unsolicited bulk messaging.
 - Never claim a business lacks POS or other software without verification.
+- No Google Maps scraping or copying Maps business details into the database.
 
 ## Documentation
 - [PRD](docs/PRD.md)
@@ -35,7 +36,9 @@ Target: 50 unique restaurants in Gulshan-e-Iqbal, Karachi. This is a validation 
 - [Development guide](docs/DEVELOPMENT.md)
 - [Testing and acceptance](docs/TESTING_AND_ACCEPTANCE.md)
 - [Open-source research method](docs/OPEN_SOURCE_RESEARCH.md)
+- [Open-source technical audit](docs/OPEN_SOURCE_AUDIT_REPORT.md)
 - [ADR 0001](docs/decisions/ADR-0001-local-first-and-source-provenance.md)
+- [ADR 0002](docs/decisions/ADR-0002-mvp-stack-and-source-strategy.md)
 
 ## Initial non-goals
 No Google Maps scraping, automated WhatsApp sending, paid enrichment API, hosted multi-tenant SaaS, or unsupported AI-generated claims in the MVP.
