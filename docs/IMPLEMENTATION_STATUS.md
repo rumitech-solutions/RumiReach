@@ -1,12 +1,13 @@
 # Implementation Status
 
-## Initial Goal 1 vertical slice
+## Current state
 
-A first prototype has been committed. It is an early development build, not a production-ready release.
+The repository contains an early Goal 1 discovery prototype. It is not a production-ready release and it does not yet perform nationwide ingestion.
 
-**CI:** GitHub Actions successfully completed npm install, TypeScript typecheck, and production build on Ubuntu for the current prototype commit. Windows runtime verification is still pending.
+**CI:** GitHub Actions previously completed npm install, TypeScript typecheck, and production build on Ubuntu for the prototype. Windows installation/runtime verification remains pending. Re-run CI after code changes.
 
-Implemented in source:
+## Implemented in source
+
 - React + TypeScript + Vite dashboard shell.
 - Fastify API bound to localhost.
 - SQLite persistence under the user's local application data directory.
@@ -16,26 +17,34 @@ Implemented in source:
 - Basic candidate review status changes.
 - GitHub Actions typecheck/build workflow.
 
-Not yet implemented:
-- Reviewed Gulshan-e-Iqbal boundary / bounding box.
-- Candidate-to-lead promotion and lead management.
-- Field-level observation history and source policy version snapshots.
-- Duplicate suggestions.
+## Documented, not yet implemented
+
+- Pakistan-wide geographic registry and versioned boundary data.
+- Tile planner and persistent resumable nationwide batch jobs.
+- Pause/resume/cancel and per-tile progress UI/API.
+- Local Pakistan/regional OSM extract importer.
+- Stable-ID deduplication across overlapping tiles and sources.
+- Field-level observation/provenance history and source policy version snapshots.
+- Cross-source duplicate suggestions.
 - Pakistani phone normalization.
-- CSV export and quality report.
-- Persistent job queue and job cancellation.
+- Candidate-to-lead promotion and lead management.
+- CSV export and data-quality report.
 - Automated tests, Windows installation verification, backup/restore.
 - Complete security review of source ingestion and UI.
 
 ## Important limitations
-- OSM may contain few or no restaurant phone/website tags in the pilot area.
+
+- The current API requires an operator-supplied WGS84 bounding box and enforces a small area limit.
+- It only searches OSM restaurant tags; it does not cover all Pakistani businesses or all cities.
+- OSM may contain few or no restaurant phone/website tags in a given area.
+- A missing field means the source did not provide it, not that the business lacks it.
 - The adapter intentionally does not use Google Maps.
 - Overpass is a shared service; a failed request must not be interpreted as zero results.
 - Do not run repeated queries to work around rate limits.
 - The current candidate table is a staging view, not a verified lead CRM.
-- Search currently requires an operator-reviewed bounding box; do not guess coordinates.
 
 ## Run locally
+
 From repository root:
 1. Install Node.js 24.
 2. Run `npm install`.
@@ -45,3 +54,13 @@ From repository root:
 API health: `http://127.0.0.1:4317/api/health`
 
 The local database is stored under the Windows user's LocalAppData folder in `RumiReach/data` by default. Do not commit this data folder or export files.
+
+## Next implementation order
+
+1. Inspect and test the existing schema/API before changing the database.
+2. Add a versioned Pakistan geography registry with source/licence metadata.
+3. Add a deterministic tile planner and strict tile-size validation.
+4. Add persistent tile tasks, checkpoints, retry-after handling and cancellation.
+5. Add stable-source-ID deduplication and quality metrics.
+6. Add a local-extract import path for national-scale OSM data.
+7. Add CSV export and lead promotion after candidate provenance is reliable.
