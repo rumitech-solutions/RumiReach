@@ -8,7 +8,7 @@ export const BUSINESS_CATEGORIES = [
 export const SearchRequestSchema = z.object({
   category:z.enum(BUSINESS_CATEGORIES),
   city:z.string().trim().min(2).max(80),
-  locality:z.string().trim().min(2).max(100),
+  locality:z.string().trim().max(100).optional().default(""),
   bbox:z.object({
     south:z.number().min(-90).max(90),west:z.number().min(-180).max(180),
     north:z.number().min(-90).max(90),east:z.number().min(-180).max(180)
