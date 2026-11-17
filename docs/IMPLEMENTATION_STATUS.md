@@ -4,7 +4,7 @@
 
 The repository contains an early Goal 1 discovery prototype. It is not a production-ready release and it does not yet perform nationwide ingestion.
 
-**CI:** The provenance implementation passed GitHub Actions typecheck, tests, and build. The CSV import API and frontend have also been committed; their latest CI run is being checked. Windows installation/runtime verification remains pending.
+**CI:** Provenance and CSV import passed earlier GitHub Actions checks. Automatic identity resolution has now been committed; its CI run is pending verification. Windows installation/runtime verification remains pending.
 
 ## Implemented in source
 
@@ -20,7 +20,7 @@ The repository contains an early Goal 1 discovery prototype. It is not a product
 - CSV parser handles quoted fields, escaped quotes, CRLF, duplicate headers, and malformed quotes.
 - Local CSV import API accepts up to 5,000 rows / 1.5 MB, creates an import job, and stores each field as unverified source provenance.
 - Dashboard has a CSV import panel and reloads imported records into candidate review.
-- Basic candidate review status changes.
+- Basic candidate review status changes.\n- Automatic cross-source identity resolution using normalized Pakistani phone numbers, website domains, name similarity, and address/branch conflict guards.\n- Unified business profile tables, source-record links, confidence/reason metadata, and automatic merge history.\n- API endpoints for unified profiles and matching status; discovery and CSV imports trigger matching automatically.\n- Dashboard panel for unified business profiles.\n- Matching unit tests for phone/domain normalization, positive matches, false positives, and branch conflicts.
 - GitHub Actions typecheck/build workflow.
 
 ## Documented, not yet implemented
@@ -31,7 +31,7 @@ The repository contains an early Goal 1 discovery prototype. It is not a product
 - Local Pakistan/regional OSM extract importer.
 - Stable-ID deduplication across overlapping tiles and sources.
 - Additional external source adapters beyond OSM and operator-supplied CSV.
-- Cross-source entity matching and duplicate suggestions.
+- Merge rollback and split/reassign workflow; current automatic links preserve original source records but cannot yet be undone in the UI.
 - Source policy version snapshots.
 - Pakistani phone normalization.
 - Candidate-to-lead promotion and lead management.
