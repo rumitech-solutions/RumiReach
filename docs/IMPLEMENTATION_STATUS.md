@@ -12,7 +12,7 @@ The repository contains an early Goal 1 discovery prototype. It is not a product
 - Fastify API bound to localhost.
 - SQLite persistence under the user's local application data directory.
 - Source registry seed for OpenStreetMap.
-- One bounded Overpass restaurant query at a time per API process.
+- Bounded, category-aware Overpass discovery processed sequentially through one local API worker queue.
 - Candidate fields for name, category, address, phone, website, email, source object URL, observation timestamp, and raw source payload.
 - Field-level provenance table for source-specific values, collection timestamps, upstream timestamps, verification status, and optional confidence.
 - OSM adapter records individual field observations without marking them verified.
