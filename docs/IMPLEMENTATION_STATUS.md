@@ -92,3 +92,17 @@ The local database is stored under the Windows user's LocalAppData folder in `Ru
 - The operator must review the selected boundary. This is a geocoded place bounding box, not guaranteed to be a legal municipal boundary.
 - The existing Overpass search remains area-limited and single-request. Large city extents still require the separately planned tile scheduler; this commit does not claim nationwide or full-city coverage.
 - OSM attribution is displayed with geocoding results. Public Nominatim is a constrained shared service; see https://operations.osmfoundation.org/policies/nominatim/.
+
+## Persistent city tile discovery (2026-11-17)
+
+- Added a deterministic geographic tile planner. Each tile is at most 0.05 degrees on each axis, keeping individual Overpass queries within the existing small-area safety envelope.
+- Added a hard cap of 500 tiles per job. Larger boundaries are rejected with a request to select a smaller city/locality area rather than launching unbounded work.
+- Discovery jobs now persist tile bounds and per-tile status/checkpoints in SQLite.
+- A single in-process worker queue serializes discovery jobs and processes tiles sequentially; the API does not fan out concurrent Overpass requests.
+- The search endpoint returns a job ID immediately. Progress is available from `GET /api/jobs/:id`, including completed, queued, failed and skipped tile counts.
+- Failed tiles can be retried through `POST /api/jobs/:id/resume`. Running tile checkpoints are returned to the queue after an API restart; the operator can resume the job.
+- Candidate identity remains deduplicated by source object type and OSM ID within each discovery job; the job-level maximum result count is enforced across tiles.
+- Dashboard now polls tile progress and exposes a retry action after a failed job.
+- Tests cover tile boundaries, remainder edges, invalid extents and the 500-tile cap.
+- This is bounded, resumable tile discovery—not a promise of complete city coverage. It still depends on OSM tagging density, Overpass availability, selected boundary quality and the per-job result cap. The tile cap can require the operator to choose a smaller locality.
+- Current job processing is local to one API process. Multi-instance distributed locking, pause/cancel controls, durable automatic startup resumption, per-city coverage analytics and additional data sources remain future work.
