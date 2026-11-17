@@ -5,7 +5,7 @@ import { db } from "./db";
 import { discoverBusinesses } from "./overpass";
 import { findFieldConflicts } from "./provenance";
 import { normalizeSourceUrl, normalizeWebsite, parseCsv } from "./csv";
-import { ensureMatchingSchema, resolveUnlinkedCandidates } from "./matching";
+import { ensureMatchingSchema, resolveUnlinkedCandidates } from "./matching";\nimport { lookupPakistanCity } from "./geography";
 
 ensureMatchingSchema();
 
@@ -18,6 +18,17 @@ app.get("/api/candidates",async(request)=>{
   const query=request.query as {jobId?:string};
   const sql="SELECT id,job_id,source_object_type,source_object_id,name,category,address,phone_raw,website_url,public_email,source_url,observed_at,review_status FROM candidates ";
   return query.jobId ? db.prepare(sql+"WHERE job_id=? ORDER BY name COLLATE NOCASE").all(query.jobId) : db.prepare(sql+"ORDER BY observed_at DESC LIMIT 300").all();
+});
+app.get("/api/geography/lookup",async(request,reply)=>{
+  const query=request.query as {city?:string};
+  if(typeof query.city!=="string" || query.city.trim().length<2 || query.city.trim().length>80) return reply.code(400).send({error:"Provide a city name between 2 and 80 characters."});
+  try {
+    const results=await lookupPakistanCity(query.city);
+    return {query:query.city,country:"Pakistan",results,attribution:"Geocoding data © OpenStreetMap contributors (ODbL). Public Nominatim use is user-triggered, cached, and rate-limited."};
+  } catch(error) {
+    const message=error instanceof Error?error.message:"City lookup failed.";
+    return reply.code(message.includes("busy") || message.includes("rate-limiting")?429:502).send({error:message});
+  }
 });
 app.post("/api/search",async(request,reply)=>{
   const parsed=SearchRequestSchema.safeParse(request.body);
