@@ -3,7 +3,7 @@ type Candidate={id:string;name:string|null;category:string|null;address:string|n
 type Profile={id:string;canonical_name:string|null;category:string|null;address:string|null;phone_raw:string|null;website_url:string|null;source_count:number};
 type Provenance={observations:Array<{id:string;field_name:string;field_value:string;source_id:string;source_url:string;observed_at:string;source_timestamp:string|null;verification_status:string;confidence:number|null}>;conflicts:Array<{field:string;values:string[]}>};
 export default function App(){
- const [city,setCity]=useState("Karachi"),[locality,setLocality]=useState("Gulshan-e-Iqbal"),[category,setCategory]=useState("restaurant");
+ const [city,setCity]=useState("Karachi"),[locality,setLocality]=useState(""),[category,setCategory]=useState("restaurant");
  const [south,setSouth]=useState(""),[west,setWest]=useState(""),[north,setNorth]=useState(""),[east,setEast]=useState("");
  const [boundaryChoices,setBoundaryChoices]=useState<Array<{id:string;label:string;bbox:{south:number;west:number;north:number;east:number};category:string}>>([]);
  const [lookupBusy,setLookupBusy]=useState(false);
