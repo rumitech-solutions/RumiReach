@@ -6,7 +6,8 @@ export default function App(){
  const [city,setCity]=useState("Karachi"),[locality,setLocality]=useState(""),[category,setCategory]=useState("restaurant");
  const [south,setSouth]=useState(""),[west,setWest]=useState(""),[north,setNorth]=useState(""),[east,setEast]=useState("");
  const [boundaryChoices,setBoundaryChoices]=useState<Array<{id:string;label:string;bbox:{south:number;west:number;north:number;east:number};category:string}>>([]);
- const [lookupBusy,setLookupBusy]=useState(false);\n const [activeJobId,setActiveJobId]=useState<string|null>(null),[lastJobId,setLastJobId]=useState<string|null>(null),[jobProgress,setJobProgress]=useState<{status:string;totalTiles:number;completedTiles:number;failedTiles:number;queuedTiles:number;candidate_count:number;error_message:string|null}|null>(null);
+ const [lookupBusy,setLookupBusy]=useState(false);
+ const [activeJobId,setActiveJobId]=useState<string|null>(null),[lastJobId,setLastJobId]=useState<string|null>(null),[jobProgress,setJobProgress]=useState<{status:string;totalTiles:number;completedTiles:number;failedTiles:number;queuedTiles:number;candidate_count:number;error_message:string|null}|null>(null);
  const [maxResults,setMaxResults]=useState(50),[candidates,setCandidates]=useState<Candidate[]>([]),[profiles,setProfiles]=useState<Profile[]>([]);
  const [busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("Find a city boundary above, then review the bounds before running the OSM query.");
  const [provenance,setProvenance]=useState<Record<string,Provenance>>({}),[openProvenance,setOpenProvenance]=useState<string|null>(null);
