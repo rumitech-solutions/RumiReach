@@ -5,6 +5,9 @@ import { db } from "./db";
 import { discoverRestaurants } from "./overpass";
 import { findFieldConflicts } from "./provenance";
 import { normalizeSourceUrl, normalizeWebsite, parseCsv } from "./csv";
+import { ensureMatchingSchema, resolveUnlinkedCandidates } from "./matching";
+
+ensureMatchingSchema();
 
 const app = Fastify({logger:true,bodyLimit:2_000_000});
 const HOST = "127.0.0.1";
@@ -31,7 +34,8 @@ app.post("/api/search",async(request,reply)=>{
   try {
     const result=await discoverRestaurants({jobId,bbox:input.bbox,maxResults:input.maxResults});
     db.prepare("UPDATE search_jobs SET status='completed',candidate_count=?,source_timestamp=?,finished_at=? WHERE id=?").run(result.count,result.sourceTimestamp,new Date().toISOString(),jobId);
-    return {jobId,status:"completed",candidateCount:result.count,sourceTimestamp:result.sourceTimestamp,attribution:"© OpenStreetMap contributors — data available under the Open Database License (ODbL)"};
+    const matching=resolveUnlinkedCandidates();
+    return {jobId,status:"completed",candidateCount:result.count,matching,sourceTimestamp:result.sourceTimestamp,attribution:"© OpenStreetMap contributors — data available under the Open Database License (ODbL)"};
   } catch(error) {
     const message=error instanceof Error?error.message:"Unknown source error";
     db.prepare("UPDATE search_jobs SET status='failed',error_message=?,finished_at=? WHERE id=?").run(message,new Date().toISOString(),jobId);
@@ -76,8 +80,11 @@ app.post("/api/import/csv",async(request,reply)=>{
     db.prepare("UPDATE search_jobs SET status='completed',candidate_count=?,finished_at=? WHERE id=?").run(imported,new Date().toISOString(),jobId);
   });
   try { run(); } catch(error) { request.log.error(error,"CSV import failed"); return reply.code(500).send({error:"CSV import failed; no partial batch was committed."}); }
-  return {batchId,jobId,sourceId,filename,status:"completed",imported,skipped,invalidWebsite,limit:5000,notice:"Imported values are unverified. CSV rows are kept as separate candidates; cross-source matching and deduplication are not yet enabled."};
+  const matching=resolveUnlinkedCandidates();
+  return {batchId,jobId,sourceId,filename,status:"completed",imported,skipped,invalidWebsite,matching,limit:5000,notice:"Imported values are unverified. High-confidence identity matches are automatically grouped into unified business profiles; original source records and field observations are retained."};
 });
+app.get("/api/profiles",async()=>db.prepare(`SELECT p.id,p.canonical_name,p.category,p.address,p.phone_raw,p.website_url,p.public_email,p.created_at,p.updated_at,COUNT(s.candidate_id) AS source_count FROM business_profiles p LEFT JOIN business_profile_sources s ON s.profile_id=p.id GROUP BY p.id ORDER BY p.updated_at DESC LIMIT 500`).all());
+app.get("/api/matching/status",async()=>({profiles:(db.prepare("SELECT COUNT(*) AS count FROM business_profiles").get() as {count:number}).count,linkedRecords:(db.prepare("SELECT COUNT(*) AS count FROM business_profile_sources").get() as {count:number}).count,sourceRecords:(db.prepare("SELECT COUNT(*) AS count FROM candidates").get() as {count:number}).count,automaticMerges:(db.prepare("SELECT COUNT(*) AS count FROM merge_history").get() as {count:number}).count}));
 app.get("/api/candidates/:id/provenance",async(request,reply)=>{
   const params=request.params as {id:string};
   const candidate=db.prepare("SELECT id,name,category,address,phone_raw,website_url,public_email,source_url,observed_at FROM candidates WHERE id=?").get(params.id);
