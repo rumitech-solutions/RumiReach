@@ -172,6 +172,6 @@ app.post("/api/jobs/:id/resume",async(request,reply)=>{
 });
 app.get("/api/jobs",async()=>{
  const recent=db.prepare("SELECT id FROM search_jobs ORDER BY created_at DESC LIMIT 30").all() as Array<{id:string}>;
- return recent.map(job=>getJobProgress(job.id));
+ return recent.map(job=>{const progress=getJobProgress(job.id);if(!progress)return null;const {tiles,...summary}=progress as Record<string,unknown>;return summary;});
 });
 app.listen({host:HOST,port:PORT}).catch(error=>{app.log.error(error);process.exit(1);});
