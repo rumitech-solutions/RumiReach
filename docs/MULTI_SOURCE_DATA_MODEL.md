@@ -27,6 +27,12 @@ The SQLite `field_observations` table stores:
 
 The OSM adapter writes field observations for name, category, address, phone, website, and email. It does not mark those fields as verified.
 
+The operator CSV importer also creates a source record and an import job, then stores each non-empty field as an unverified observation. It retains the CSV filename and row number in the raw record, and uses a supplied `source_url` when it is a valid HTTP(S) URL. Otherwise, the source points to a local `csv-import://` row reference. Import limits are 5,000 data rows and 1.5 MB per CSV. Blank-name rows are skipped; invalid website values are not imported as links and are counted in the response.
+
+API:
+- `POST /api/import/csv` accepts `{ filename, csv }` and returns imported/skipped counts and the import job ID. The browser sends the file text to the local API; no third-party upload service is used.
+- Imported records remain separate candidates. Cross-source matching and automatic deduplication are not yet implemented.
+
 API:
 - `GET /api/candidates/:id/provenance` returns the candidate, its field observations, and any conflicting values.
 
@@ -38,7 +44,7 @@ API:
 | Overpass | Small, bounded incremental discovery | Shared-service limits, sequential requests, backoff |
 | Business-owned website | Enrich contact and service fields | Respect robots, site terms, access controls, and low request rates |
 | Government/open datasets | Regional or sector-specific enrichment | Confirm publisher, license, update date, and reuse rights |
-| User-provided CSV | Import records supplied by the operator | Record import batch and original file/source; validate fields |
+| User-provided CSV | Import records supplied by the operator | Implemented local importer; preserve filename/row and source URL, validate fields, mark unverified |
 
 No adapter should be activated merely because a scraper library exists. Scrapy, Playwright, and similar projects are extraction frameworks; they do not grant access rights or provide a business database.
 
