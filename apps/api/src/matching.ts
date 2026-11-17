@@ -72,7 +72,7 @@ export function compareBusinessRecords(a: Candidate, b: Candidate): MatchDecisio
   if (branchConflict(a, b)) return { matched: false, confidence: Math.min(0.49, similarity * 0.49), reasons: [...reasons, "address_or_branch_conflict"] };
 
   const phoneMatch = phoneA !== null && phoneA === phoneB && similarity >= 0.6;
-  const domainMatch = domainA !== null && domainA === domainB && similarity >= 0.8;
+  const domainMatch = domainA !== null && domainA === domainB && similarity >= 0.8 && ((phoneA !== null && phoneA === phoneB) || (Boolean(a.address) && Boolean(b.address) && addressesCompatible(a.address, b.address)));
   if (phoneMatch) return { matched: true, confidence: similarity >= 0.8 ? 0.99 : 0.94, reasons };
   if (domainMatch) return { matched: true, confidence: 0.92, reasons };
   return { matched: false, confidence: Math.min(0.89, similarity * 0.7), reasons };
