@@ -188,6 +188,12 @@ export default function App() {
     catch (reason) { setError(reason instanceof Error ? reason.message : "WhatsApp send failed."); } finally { setSendingId(""); }
   }
 
+  function openWhatsApp(candidate: Candidate) {
+    const phone = whatsappNumber(candidate.phone_raw || "");
+    if (!phone) { setError("This business does not have a usable phone number."); return; }
+    const text = makeWhatsAppMessage(whatsappDraft, candidate);
+    window.open("https://wa.me/" + phone + "?text=" + encodeURIComponent(text), "_blank", "noopener,noreferrer");
+  }
   function chooseFile(file?: File) { if (file && file.name.toLowerCase().endsWith(".csv")) { setCsvFile(file); setMessage(""); setError(""); setProgress(""); } }
   const pageRows = useMemo(() => candidates, [candidates]);
   function exportCsv() {
