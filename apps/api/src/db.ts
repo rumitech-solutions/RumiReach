@@ -27,3 +27,6 @@ db.prepare("INSERT OR IGNORE INTO sources (id,name,terms_url,attribution,enabled
 );
 
 db.exec("CREATE TABLE IF NOT EXISTS geocode_cache (query_key TEXT PRIMARY KEY, result_json TEXT NOT NULL, cached_at TEXT NOT NULL);");
+
+db.exec("CREATE TABLE IF NOT EXISTS discovery_tiles (id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES search_jobs(id) ON DELETE CASCADE, tile_index INTEGER NOT NULL, bbox_south REAL NOT NULL, bbox_west REAL NOT NULL, bbox_north REAL NOT NULL, bbox_east REAL NOT NULL, status TEXT NOT NULL DEFAULT 'queued', candidate_count INTEGER NOT NULL DEFAULT 0, error_message TEXT, started_at TEXT, finished_at TEXT, UNIQUE(job_id,tile_index));");
+db.exec("CREATE INDEX IF NOT EXISTS idx_discovery_tiles_job_status ON discovery_tiles(job_id,status,tile_index);");
