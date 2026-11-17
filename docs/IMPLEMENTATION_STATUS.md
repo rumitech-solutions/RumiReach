@@ -29,7 +29,7 @@ The repository contains an early Goal 1 discovery prototype. It is not a product
 - Multi-city nationwide batch orchestration.
 - Pause/cancel controls (failed/interrupted tile retry and per-tile progress are implemented).
 - Local Pakistan/regional OSM extract importer.
-- Stable-ID deduplication across overlapping tiles and sources.
+- Stable-ID deduplication across separate jobs and independent source adapters (OSM object IDs are already deduplicated within a job across its tiles).
 - Additional external source adapters beyond OSM and operator-supplied CSV.
 - Merge rollback and split/reassign workflow; current automatic links preserve original source records but cannot yet be undone in the UI.
 - Source policy version snapshots.
@@ -43,7 +43,7 @@ The repository contains an early Goal 1 discovery prototype. It is not a product
 
 - The operator must look up and select a city/place boundary; the selected bounding box is tiled automatically.
 - It searches configured OSM business categories, but does not cover every business or every city.
-- OSM may contain few or no restaurant phone/website tags in a given area.
+- OSM may contain few or no public phone/website tags for businesses in a given area.
 - A missing field means the source did not provide it, not that the business lacks it.
 - The adapter intentionally does not use Google Maps.
 - Overpass is a shared service; a failed request must not be interpreted as zero results.
