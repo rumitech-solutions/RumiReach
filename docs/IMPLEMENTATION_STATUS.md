@@ -1,17 +1,18 @@
 # Implementation Status
 
-## Initial Goal 1 scaffold
+## Initial Goal 1 vertical slice
 
-This is an early vertical slice, not a production-ready release.
+A first prototype has been committed. It is an early development build, not a production-ready release. It has not yet been installed or executed on the user's Windows machine, and the CI workflow has not reported a completed run.
 
-Implemented:
+Implemented in source:
 - React + TypeScript + Vite dashboard shell.
 - Fastify API bound to localhost.
 - SQLite persistence under the user's local application data directory.
 - Source registry seed for OpenStreetMap.
-- One bounded Overpass restaurant query per active process.
+- One bounded Overpass restaurant query at a time per API process.
 - Candidate fields for name, category, address, phone, website, email, source object URL, observation timestamp, and raw source payload.
 - Basic candidate review status changes.
+- Initial GitHub Actions typecheck/build workflow.
 
 Not yet implemented:
 - Reviewed Gulshan-e-Iqbal boundary / bounding box.
@@ -20,7 +21,7 @@ Not yet implemented:
 - Duplicate suggestions.
 - Pakistani phone normalization.
 - CSV export and quality report.
-- Job cancellation and persistent job queue.
+- Persistent job queue and job cancellation.
 - Automated tests, Windows installation verification, backup/restore.
 - Complete security review of source ingestion and UI.
 
@@ -30,13 +31,15 @@ Not yet implemented:
 - Overpass is a shared service; a failed request must not be interpreted as zero results.
 - Do not run repeated queries to work around rate limits.
 - The current candidate table is a staging view, not a verified lead CRM.
+- Search currently requires an operator-reviewed bounding box; do not guess coordinates.
 
-## Run locally (after installing dependencies)
+## Run locally
 From repository root:
-1. \`npm install\`
-2. \`npm run dev\`
-3. Open \`http://127.0.0.1:5173\`
+1. Install Node.js 24.
+2. Run `npm install`.
+3. Run `npm run dev`.
+4. Open `http://127.0.0.1:5173`.
 
-API health: \`http://127.0.0.1:4317/api/health\`
+API health: `http://127.0.0.1:4317/api/health`
 
-Before running a search, enter an operator-reviewed bounding box for the target locality. Do not guess coordinates.
+The local database is stored under the Windows user's LocalAppData folder in `RumiReach/data` by default. Do not commit this data folder or export files.
