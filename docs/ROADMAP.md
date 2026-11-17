@@ -4,19 +4,21 @@ Complete each phase's acceptance gate before starting the next.
 
 ## Phase 0 — Research and foundation
 - [x] Confirm product name and repository.
-- [x] Add initial PRD, architecture, data governance, data model, security, roadmap, development, testing, and research docs.
-- [ ] Audit candidate open-source projects: algorithms, architecture, UX, license, risks, and limitations.
-- [ ] Review source policies and endpoint limits.
-- [ ] Confirm stack and local setup.
-**Gate:** approved source plan, architecture, and implementation backlog.
+- [x] Add initial PRD, architecture, data governance, data model, security, roadmap, development, and testing docs.
+- [x] Audit candidate open-source projects at source/documentation level.
+- [x] Review Google Maps restrictions, OSM ODbL, and Overpass shared-service guidance.
+- [x] Select local-first MVP stack.
+- [ ] Confirm pilot boundary/bounding box for Gulshan-e-Iqbal.
+**Gate:** research findings and architecture decisions recorded; source constraints explicit.
 
 ## Phase 1 — Goal 1: discover and collect
-- [ ] Scaffold local app and database migrations.
+- [ ] Scaffold React/Vite, Fastify, shared schemas, and test workspaces.
+- [ ] Add SQLite schema and versioned migrations.
 - [ ] Implement source registry and adapter contract.
-- [ ] Implement first permitted discovery adapter.
-- [ ] Add bounded jobs, progress, cancellation, and logs.
-- [ ] Add candidate review and source provenance.
-- [ ] Add phone normalization and website URL validation.
+- [ ] Implement bounded OSM/Overpass discovery adapter.
+- [ ] Add job progress, cancellation, cache, and conservative rate limiting.
+- [ ] Add candidate review and field-level provenance.
+- [ ] Add Pakistani phone normalization and website URL validation.
 - [ ] Add duplicate suggestions and manual review.
 - [ ] Add lead promotion, filtering, and CSV export.
 - [ ] Run pilot: target 50 restaurants in Gulshan-e-Iqbal, Karachi.
