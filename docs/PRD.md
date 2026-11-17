@@ -3,9 +3,9 @@
 - Product: RumiReach
 - Tagline: Discover. Qualify. Connect.
 - Owner: RumiTech Solutions
-- Version: 0.1 — initial baseline
+- Version: 0.2 — source audit and stack decision
 - Date: 2026-11-17
-- Status: review required
+- Status: implementation baseline
 
 ## 1. Vision
 Build a local-first client acquisition platform that helps RumiTech Solutions discover potential business clients, organize trustworthy public business information, understand each business's digital presence, and manage compliant, human-reviewed outreach.
@@ -40,11 +40,12 @@ A RumiTech Solutions operator using a Windows desktop.
 - Local-first, single-user dashboard.
 - Search configuration: category, city, locality, target count, selected sources.
 - Source adapter interface with terms, attribution, permitted fields, and rate limits.
-- Initial permitted-source investigation and OSM-based proof of concept where coverage exists.
+- First discovery experiment: OSM/Overpass, only within its permitted usage and ODbL obligations.
+- Operator-confirmed locality boundary or bounding box for the first pilot; no hidden geocoding provider.
 - Candidate staging and human approval before promotion to leads.
 - Business name, category, address/locality, public phone, website, business-published email/social links where permitted, source reference, source type, observed date, verification status, notes.
 - Pakistani phone normalization to E.164 when unambiguous; preserve raw input.
-- Website URL normalization and safe HTTP(S) reachability checks.
+- Website URL syntax validation in Goal 1; active website reachability checks are a separate, security-reviewed feature.
 - Duplicate suggestions using normalized phone/domain and conservative name/location matching.
 - CSV export, quality metrics, and error reporting.
 
@@ -56,6 +57,7 @@ A RumiTech Solutions operator using a Windows desktop.
 - Multi-tenant SaaS, billing, public lead marketplace.
 - Claims that a business lacks POS, CRM, inventory, or ordering software without verification.
 - Collection of personal profiles or sensitive personal data.
+- General-purpose web crawling in the first Goal 1 release.
 
 ## 7. Functional requirements
 
@@ -63,14 +65,14 @@ A RumiTech Solutions operator using a Windows desktop.
 |---|---|---|
 | FR-001 | Search by category, city, and locality | P0 |
 | FR-002 | Each source declares terms, permitted fields, attribution, and limits | P0 |
-| FR-003 | Candidate records retain source reference and observed timestamp | P0 |
+| FR-003 | Candidate records retain source reference and timestamp | P0 |
 | FR-004 | User can accept, reject, merge, or flag candidates | P0 |
 | FR-005 | Missing values remain unknown; never fabricate | P0 |
 | FR-006 | Normalize Pakistani phones while preserving raw input | P0 |
-| FR-007 | Validate website syntax and perform safe reachability checks | P0 |
+| FR-007 | Validate website URL syntax and schemes | P0 |
 | FR-008 | Detect likely duplicates; ambiguous matches require review | P0 |
 | FR-009 | Search, filter, sort, and export leads to CSV | P0 |
-| FR-010 | Record collection and verification timestamps | P0 |
+| FR-010 | Record collection/verification timestamps and source base timestamp | P0 |
 | FR-011 | Re-runs do not overwrite manually verified values silently | P0 |
 | FR-012 | Field-level provenance history | P1 |
 | FR-013 | Do-not-contact and opt-out status | P1 |
@@ -84,13 +86,15 @@ A RumiTech Solutions operator using a Windows desktop.
 - Missing website data in one source does not prove absence.
 - Technology detection is a signal, not proof of internal software.
 - Website analysis cannot reliably prove POS absence; verify directly with the business.
+- Every imported lead must have a traceable source reference and collection timestamp.
 
 ## 9. Non-functional requirements
-- Windows local setup with reproducible instructions.
+- Windows setup with reproducible npm commands.
 - Core MVP works without paid API credentials.
-- SQLite is the proposed first single-user database; migrations must permit future PostgreSQL.
+- SQLite with versioned migrations; migrations must permit future PostgreSQL.
 - No secrets or lead data committed to Git.
 - Network collection is bounded, rate-limited, observable, and cancellable.
+- Local API binds to 127.0.0.1 by default.
 - Portable exports and documented backups.
 - Tests cover parsing, normalization, deduplication, source rules, and exports.
 
@@ -114,10 +118,14 @@ A RumiTech Solutions operator using a Windows desktop.
 - No prohibited Google Maps extraction or automated WhatsApp sending.
 - All P0 tests pass and Windows setup works.
 
-The 50-record goal is a sample target, not a guarantee from any source.
+The 50-record goal is a sample target, not a guarantee from any source. If OSM does not yield 50 suitable records, RumiReach must report the measured gap; it must not silently switch to a prohibited source.
 
 ## 12. Risks and assumptions
-Open datasets may be incomplete or stale; provider rules and formats change; public search results are not automatically free-to-scrape; local law may impose additional restrictions; zero subscription cost does not mean unlimited throughput.
+Open datasets may be incomplete or stale; public Overpass instances are shared and can throttle or deny requests; provider rules and formats change; public search results are not automatically free-to-scrape; local law may impose additional restrictions; zero subscription cost does not mean unlimited throughput.
 
-## 13. Decisions still required
-Confirm source mix after policy review; confirm local web dashboard; confirm SQLite for MVP; select repository license; define retention periods for rejected and stale records.
+## 13. Decisions
+- Stack: React + TypeScript + Vite, Fastify API, SQLite (better-sqlite3), Zod, Vitest.
+- First source experiment: OSM/Overpass with attribution and ODbL review.
+- No Google Maps extraction.
+- Repository license remains to be selected.
+- Retention periods for rejected/stale records must be decided before production use.
