@@ -32,3 +32,6 @@ db.exec("CREATE TABLE IF NOT EXISTS discovery_tiles (id TEXT PRIMARY KEY, job_id
 db.exec("CREATE INDEX IF NOT EXISTS idx_discovery_tiles_job_status ON discovery_tiles(job_id,status,tile_index);");
 
 try { db.exec("ALTER TABLE search_jobs ADD COLUMN max_results INTEGER NOT NULL DEFAULT 100"); } catch { /* already migrated */ }
+
+const interruptedTiles = db.prepare("UPDATE discovery_tiles SET status='queued',error_message=NULL,started_at=NULL,finished_at=NULL WHERE status='running'").run();
+if (interruptedTiles.changes) db.prepare("UPDATE search_jobs SET status='failed',error_message='API restarted while this job was running. Resume to continue queued tiles.',finished_at=? WHERE status='running'").run(new Date().toISOString());
