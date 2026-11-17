@@ -6,7 +6,7 @@ import { normalizeSourceUrl, normalizeWebsite, parseCsv } from "./csv";
 import { ensureMatchingSchema } from "./matching";
 
 ensureMatchingSchema();
-const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024 });
+const app = Fastify({ logger: true, bodyLimit: Number.MAX_SAFE_INTEGER });
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.PORT || 4317);
 const IMPORT_SOURCE = "user_csv_import";
@@ -86,7 +86,7 @@ app.post("/api/import/csv/:batchId/batch", async (request, reply) => {
   const session = importSessions.get(batchId);
   if (!session || session.status !== "running") return reply.code(404).send({ error: "Import session not found or no longer active." });
   const body = request.body as { rows?: ImportRow[]; startRow?: number };
-  if (!Array.isArray(body?.rows) || body.rows.length > 1000 || body.rows.some(row => !row || typeof row !== "object" || Array.isArray(row))) return reply.code(400).send({ error: "Provide a batch containing up to 1,000 CSV row objects." });
+  if (!Array.isArray(body?.rows) || body.rows.some(row => !row || typeof row !== "object" || Array.isArray(row))) return reply.code(400).send({ error: "Provide an array of CSV row objects." });
   const startRow = Number(body.startRow);
   if (!Number.isInteger(startRow) || startRow !== session.nextRow) return reply.code(409).send({ error: "Batch sequence mismatch. Expected row " + session.nextRow + "." });
   try {
@@ -97,7 +97,7 @@ app.post("/api/import/csv/:batchId/batch", async (request, reply) => {
     request.log.error(error, "CSV batch failed");
     session.status = "failed";
     db.prepare("UPDATE search_jobs SET status='failed',error_message=?,finished_at=? WHERE id=?").run("CSV batch failed.", new Date().toISOString(), session.jobId);
-    return reply.code(500).send({ error: "CSV batch failed. Previously committed batches remain saved; remove the incomplete import before retrying." });
+    return reply.code(500).send({ error: "CSV batch failed. Previously committed batches remain saved; check the directory before retrying." });
   }
 });
 
