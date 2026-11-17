@@ -1,50 +1,34 @@
 # RumiReach
 
-**Discover. Qualify. Connect.**
+**Import. Organize. Manage.**
 
-An intelligent client-acquisition workspace by RumiTech Solutions. RumiReach helps discover businesses from permitted public sources, organize and verify business information, qualify potential clients, and manage respectful outreach.
+RumiReach is a local-first CSV business-lead workspace by RumiTech Solutions. Import a business dataset that you are authorized to use, clean and organize its core contact fields, review records, search/filter the list, and export the filtered results.
 
-**Status:** early Goal 1 discovery prototype committed; nationwide ingestion design is documented, but nationwide execution is not implemented yet. Windows installation and runtime validation are pending.
+## Current product scope
 
-## Product stages
-1. Discover and collect business leads across Pakistan.
-2. Verify data quality and qualify opportunities.
-3. Prepare compliant, human-reviewed outreach.
-4. Audit public websites and recommend services using evidence.
-5. Manage sales pipeline, follow-ups, proposals, and outcomes.
+1. Import CSV files (up to 5,000 rows / 1.5 MB per file).
+2. Accept `name` or `business_name` as the required business-name header.
+3. Normalize website URLs and map common field names for category, address, phone, website, email and source URL.
+4. Store imported values locally as unverified source observations.
+5. Search, filter by category/review status, sort, manually review, and export filtered records to CSV.
 
-## Geographic scope
-The intended product scope is **all of Pakistan**: provinces, territories, cities, towns and localities, subject to the coverage and permitted use of available sources. The earlier Gulshan-e-Iqbal 50-record target is no longer the product boundary. Nationwide coverage will be rolled out in measured, resumable geographic batches; no complete-directory claim is made.
+The dashboard is CSV-first. It does not perform live business discovery or connect to OSM, Overpass, Nominatim, Google Places, or other discovery providers. The repository retains some legacy schema/modules from the earlier prototype, but the current API and dashboard do not expose or run those discovery flows.
 
-## Principles
-- Zero paid API/subscription dependency for the initial local MVP.
-- Local-first, user-controlled exports.
-- Research open-source projects for ideas; independently implement RumiReach product logic.
-- Mandatory source provenance, license review, privacy, and data minimization.
-- Public contact information is not consent for marketing messages.
-- Human review before outreach; no unsolicited bulk messaging.
-- Never claim a business lacks POS or other software without verification.
-- No Google Maps scraping or copying Maps business details into the database.
+## Data-use responsibility
 
-## Documentation
-- [PRD](docs/PRD.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Implementation status](docs/IMPLEMENTATION_STATUS.md)
-- [Pakistan-wide scope](docs/PILOT_AREA.md)
-- [Data acquisition strategy](docs/DATA_ACQUISITION_STRATEGY.md)
-- [Data sources and compliance](docs/DATA_SOURCES_AND_COMPLIANCE.md)
-- [Data model](docs/DATA_MODEL.md)
-- [Security and privacy](docs/SECURITY_AND_PRIVACY.md)
-- [Roadmap](docs/ROADMAP.md)
-- [Development guide](docs/DEVELOPMENT.md)
-- [Testing and acceptance](docs/TESTING_AND_ACCEPTANCE.md)
-- [Open-source research method](docs/OPEN_SOURCE_RESEARCH.md)
-- [Open-source technical audit](docs/OPEN_SOURCE_AUDIT_REPORT.md)
-- [ADR 0001](docs/decisions/ADR-0001-local-first-and-source-provenance.md)
-- [ADR 0002](docs/decisions/ADR-0002-mvp-stack-and-source-strategy.md)
+Import only datasets you are authorized to collect, store, and reuse. A CSV file's availability or a scraper's open-source license does not grant permission to reuse the underlying third-party data. RumiReach does not verify imported business details or source permissions automatically.
 
-## Initial non-goals
-No Google Maps scraping, automated WhatsApp sending, paid enrichment API, hosted multi-tenant SaaS, or unsupported AI-generated claims in the MVP.
+## Run locally
+
+1. Install Node.js 24.
+2. From the repository root run `npm install`.
+3. Run `npm run dev`.
+4. Open `http://127.0.0.1:5173`.
+
+API health: `http://127.0.0.1:4317/api/health`
+
+SQLite data is stored under `%LOCALAPPDATA%\\RumiReach\\data` on Windows by default. Do not commit the local database or exported lead files.
 
 ## License
+
 No repository license has been selected. Until one is added, all rights are reserved; do not assume this project is open source.
