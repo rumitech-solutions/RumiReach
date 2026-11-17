@@ -71,3 +71,15 @@ The local database is stored under the Windows user's LocalAppData folder in `Ru
 5. Add persistent tile tasks, checkpoints, retry-after handling and cancellation.
 6. Add stable-source-ID deduplication, regional quality metrics, and a local OSM extract importer.
 7. Add a separately reviewed business-website enrichment adapter and permitted government/open-data adapters.
+
+ 
+## Business discovery expansion (2026-11-17)
+
+- Expanded discovery request validation from restaurant-only to 27 category choices, including a bounded "all common businesses" mode.
+- Generalized the Overpass adapter to build category-specific OpenStreetMap tag queries and store the source's business tags as normalized category evidence.
+- Dashboard now lets the operator choose a business category before discovery.
+- Kept the existing small bounding-box limit, per-process single-request guard, result cap, field provenance, and OSM attribution.
+- Overpass HTTP 429/503 is now reported as a source availability/rate-limit failure, never as an empty result.
+- Google Maps scraping is intentionally excluded: free scraper code does not grant rights to export/store Google Maps content. Do not integrate scraping repos or proxy/CAPTCHA bypasses.
+- This is still a bounded-area OSM connector, not automatic city boundary discovery, nationwide coverage, Overture ingestion, or website contact enrichment. Those remain next phases.
+- CSV remains an optional utility; automatic location/category discovery is the primary workflow.

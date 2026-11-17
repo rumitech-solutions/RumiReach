@@ -170,3 +170,10 @@ A fresh retrieval does not prove the underlying business information is fresh. F
 - Google Maps Platform FAQ and scraping restrictions: https://developers.google.com/maps/faq
 - OpenStreetMap copyright/licence: https://www.openstreetmap.org/copyright
 - Overpass API policy: https://operations.osmfoundation.org/policies/overpass/
+
+
+## Google Maps scraper code: explicit exclusion
+
+A repository being MIT-licensed or free does not grant permission to extract data from its upstream website. Google Maps Platform policies prohibit scraping/exporting Maps content for use outside Google services, including copying business names and addresses. RumiReach therefore will not embed Google Maps browser scrapers, proxy rotation, CAPTCHA workarounds, or export pipelines. A future Google integration may only display permitted results inside a compliant Google Maps Platform flow; it must not feed the RumiReach prospect database. See https://developers.google.com/maps/faq and https://developers.google.com/maps/documentation/places/web-service/policies.
+
+The product's primary path is direct discovery from licensed/open datasets and permitted business-owned sources. Never describe a source query as exhaustive: coverage depends on the source's local completeness and tagging.

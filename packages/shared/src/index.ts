@@ -1,6 +1,12 @@
 import { z } from "zod";
+export const BUSINESS_CATEGORIES = [
+  "all","restaurant","cafe","shop","supermarket","clothing","electronics","grocery",
+  "clinic","hospital","pharmacy","dentist","school","college","university",
+  "hotel","guest_house","salon","beauty","gym","bank","real_estate","car_repair",
+  "lawyer","accountant","office","tourism","fuel"
+] as const;
 export const SearchRequestSchema = z.object({
-  category:z.literal("restaurant"),
+  category:z.enum(BUSINESS_CATEGORIES),
   city:z.string().trim().min(2).max(80),
   locality:z.string().trim().min(2).max(100),
   bbox:z.object({

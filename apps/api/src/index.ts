@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import { randomUUID } from "node:crypto";
 import { SearchRequestSchema } from "@rumireach/shared";
 import { db } from "./db";
-import { discoverRestaurants } from "./overpass";
+import { discoverBusinesses } from "./overpass";
 import { findFieldConflicts } from "./provenance";
 import { normalizeSourceUrl, normalizeWebsite, parseCsv } from "./csv";
 import { ensureMatchingSchema, resolveUnlinkedCandidates } from "./matching";
@@ -32,7 +32,7 @@ app.post("/api/search",async(request,reply)=>{
     jobId,input.category,input.city,input.locality,input.bbox.south,input.bbox.west,input.bbox.north,input.bbox.east,"osm_overpass","running",createdAt
   );
   try {
-    const result=await discoverRestaurants({jobId,bbox:input.bbox,maxResults:input.maxResults});
+    const result=await discoverBusinesses({jobId,bbox:input.bbox,maxResults:input.maxResults,category:input.category});
     db.prepare("UPDATE search_jobs SET status='completed',candidate_count=?,source_timestamp=?,finished_at=? WHERE id=?").run(result.count,result.sourceTimestamp,new Date().toISOString(),jobId);
     const matching=resolveUnlinkedCandidates();
     return {jobId,status:"completed",candidateCount:result.count,matching,sourceTimestamp:result.sourceTimestamp,attribution:"© OpenStreetMap contributors — data available under the Open Database License (ODbL)"};
