@@ -37,6 +37,19 @@ app.post("/api/search",async(request,reply)=>{
     return reply.code(502).send({jobId,status:"failed",error:message});
   }
 });
+app.get("/api/candidates/:id/provenance",async(request,reply)=>{
+  const params=request.params as {id:string};
+  const candidate=db.prepare("SELECT id,name,category,address,phone_raw,website_url,public_email,source_url,observed_at FROM candidates WHERE id=?").get(params.id);
+  if(!candidate) return reply.code(404).send({error:"Candidate not found."});
+  const observations=db.prepare("SELECT id,field_name,field_value,source_id,source_url,observed_at,source_timestamp,verification_status,confidence FROM field_observations WHERE candidate_id=? ORDER BY field_name, observed_at DESC").all(params.id) as Array<{field_name:string;field_value:string}>;
+  const grouped=new Map<string,Set<string>>();
+  for(const item of observations){
+    if(!grouped.has(item.field_name)) grouped.set(item.field_name,new Set());
+    grouped.get(item.field_name)!.add(item.field_value);
+  }
+  const conflicts=[...grouped.entries()].filter(([,values])=>values.size>1).map(([field,values])=>({field,values:[...values]}));
+  return {candidate,observations,conflicts};
+});
 app.patch("/api/candidates/:id/review",async(request,reply)=>{
   const params=request.params as {id:string},body=request.body as {status?:string};
   if(!["accepted","rejected","needs_review"].includes(body?.status||"")) return reply.code(400).send({error:"Invalid review status."});
