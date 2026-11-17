@@ -107,7 +107,9 @@ app.patch("/api/candidates/:id/review",async(request,reply)=>{
   if(!result.changes) return reply.code(404).send({error:"Candidate not found."});
   return {ok:true};
 });
-const runningJobs=new Set<string>();\nlet discoveryQueue:Promise<void>=Promise.resolve();\nfunction enqueueDiscoveryJob(jobId:string){discoveryQueue=discoveryQueue.then(()=>processDiscoveryJob(jobId)).catch(error=>app.log.error({jobId,error},"Queued discovery job failed"));}
+const runningJobs=new Set<string>();
+let discoveryQueue:Promise<void>=Promise.resolve();
+function enqueueDiscoveryJob(jobId:string){discoveryQueue=discoveryQueue.then(()=>processDiscoveryJob(jobId)).catch(error=>app.log.error({jobId,error},"Queued discovery job failed"));}
 async function processDiscoveryJob(jobId:string):Promise<void>{
  if(runningJobs.has(jobId)) return;
  runningJobs.add(jobId);
