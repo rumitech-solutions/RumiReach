@@ -11,7 +11,7 @@ RumiReach is now a local-first CSV business-lead workspace. The dashboard no lon
 - SQLite persistence under the Windows user's LocalAppData directory.
 - CSV parser supports quoted commas, escaped quotes, CRLF, duplicate-header checks, and malformed-quote errors.
 - CSV import accepts `name` or `business_name`, plus category, address, phone, website, email and source_url fields.
-- Import limits: 5,000 data rows and 1.5 MB per file.
+- CSV import has no application-defined row-count or file-size cap; practical limits depend on available RAM, disk space, browser memory and SQLite processing time.
 - Website URL normalization and safe source URL fallback.
 - Field-level source observations are stored as unverified; imported data is not automatically represented as verified.
 - Dashboard supports CSV upload, record search, category and review-status filters, sorting, manual review status changes, and filtered CSV export.
