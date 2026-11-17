@@ -83,3 +83,12 @@ The local database is stored under the Windows user's LocalAppData folder in `Ru
 - Google Maps scraping is intentionally excluded: free scraper code does not grant rights to export/store Google Maps content. Do not integrate scraping repos or proxy/CAPTCHA bypasses.
 - This is still a bounded-area OSM connector, not automatic city boundary discovery, nationwide coverage, Overture ingestion, or website contact enrichment. Those remain next phases.
 - CSV remains an optional utility; automatic location/category discovery is the primary workflow.
+
+## Automatic Pakistan city lookup (2026-11-17)
+
+- Added a user-triggered Pakistan city lookup API backed by public Nominatim search.
+- Search results are cached in SQLite and the API serializes lookups with a 1.1-second minimum interval; no autocomplete or background geocoding is used.
+- Dashboard can fetch candidate city/place boundaries and populate the existing coordinate fields after the operator selects a result.
+- The operator must review the selected boundary. This is a geocoded place bounding box, not guaranteed to be a legal municipal boundary.
+- The existing Overpass search remains area-limited and single-request. Large city extents still require the separately planned tile scheduler; this commit does not claim nationwide or full-city coverage.
+- OSM attribution is displayed with geocoding results. Public Nominatim is a constrained shared service; see https://operations.osmfoundation.org/policies/nominatim/.
