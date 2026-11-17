@@ -150,7 +150,7 @@ async function processDiscoveryJob(jobId:string):Promise<void>{
 function getJobProgress(jobId:string){
  const job=db.prepare("SELECT id,category,city,locality,status,candidate_count,max_results,error_message,source_timestamp,created_at,finished_at FROM search_jobs WHERE id=?").get(jobId);
  if(!job) return null;
- const counts=db.prepare("SELECT COUNT(*) AS totalTiles,SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completedTiles,SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failedTiles,SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END) AS queuedTiles,SUM(CASE WHEN status='skipped' THEN 1 ELSE 0 END) AS skippedTiles FROM discovery_tiles WHERE job_id=?").get(jobId);
+ const counts=db.prepare("SELECT COUNT(*) AS totalTiles,COALESCE(SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END),0) AS completedTiles,COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failedTiles,COALESCE(SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END),0) AS queuedTiles,COALESCE(SUM(CASE WHEN status='skipped' THEN 1 ELSE 0 END),0) AS skippedTiles FROM discovery_tiles WHERE job_id=?").get(jobId);
  return {...job,...counts,tiles:db.prepare("SELECT tile_index,status,candidate_count,error_message FROM discovery_tiles WHERE job_id=? ORDER BY tile_index").all(jobId)};
 }
 app.get("/api/jobs/:id",async(request,reply)=>{
@@ -172,6 +172,6 @@ app.post("/api/jobs/:id/resume",async(request,reply)=>{
 });
 app.get("/api/jobs",async()=>{
  const recent=db.prepare("SELECT id FROM search_jobs ORDER BY created_at DESC LIMIT 30").all() as Array<{id:string}>;
- return recent.map(job=>{const progress=getJobProgress(job.id);if(!progress)return null;const {tiles,...summary}=progress as Record<string,unknown>;return summary;});
+ return recent.map(job=>{const progress=getJobProgress(job.id);if(!progress)return null;const {tiles,...summary}=progress;return summary;});
 });
 app.listen({host:HOST,port:PORT}).catch(error=>{app.log.error(error);process.exit(1);});
