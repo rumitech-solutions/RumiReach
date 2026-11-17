@@ -1,6 +1,6 @@
 export type CsvRow = Record<string,string>;
 
-export function parseCsv(input: string): string[][] {
+export function parseCsv(input: string): CsvRow[] {
   const rows: string[][] = [];
   let row: string[] = [], field = "", quoted = false;
   for (let i = 0; i < input.length; i++) {
