@@ -6,13 +6,13 @@ RumiReach is a local-first CSV business-lead workspace by RumiTech Solutions. Im
 
 ## Current product scope
 
-1. Import CSV imports have no application-defined row-count or file-size cap; practical limits depend on available memory and storage.
+1. Import CSV files through the browser File Stream API and send rows in small batches; there is no application-defined total row-count or file-size cap. Practical limits depend on the computer, browser, disk and processing time.
 2. Accept `name` or `business_name` as the required business-name header.
 3. Normalize website URLs and map common field names for category, address, phone, website, email and source URL.
 4. Store imported values locally as unverified source observations.
-5. Search, filter by category/review status, sort, manually review, and export filtered records to CSV.
+5. Search and filter on the server, browse paginated results, manually review, and export the current page to CSV.
 
-The dashboard is CSV-first. It does not perform live business discovery or connect to OSM, Overpass, Nominatim, Google Places, or other discovery providers. The repository retains some legacy schema/modules from the earlier prototype, but the current API and dashboard do not expose or run those discovery flows.
+The dashboard is CSV-first. Large files are read incrementally in the browser and committed in batches, so the full CSV does not need to be held in memory at once. If a batch fails, previously committed batches remain saved and should be checked before retrying. It does not perform live business discovery or connect to OSM, Overpass, Nominatim, Google Places, or other discovery providers. The repository retains some legacy schema/modules from the earlier prototype, but the current API and dashboard do not expose or run those discovery flows.
 
 ## Data-use responsibility
 
