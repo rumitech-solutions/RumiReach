@@ -7,7 +7,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx --test src/provenance.test.ts src/csv.test.ts src/matching.test.ts src/overpass.test.ts"
+    "test": "tsx --test src/provenance.test.ts src/csv.test.ts src/matching.test.ts src/overpass.test.ts src/geography.test.ts"
   },
   "dependencies": {
     "@rumireach/shared": "*",
@@ -21,4 +21,4 @@
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   }
-}
+}\n
