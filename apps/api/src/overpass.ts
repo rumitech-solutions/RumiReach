@@ -12,9 +12,16 @@ function addressFrom(tags: Record<string,string>): string | null {
   const parts = [tags["addr:housenumber"],tags["addr:street"],tags["addr:suburb"],tags["addr:city"],tags["addr:postcode"]].filter(Boolean);
   return parts.length ? parts.join(", ") : null;
 }
+function safeWebsite(value?: string): string | null {
+  if (!value) return null;
+  try {
+    const candidate = new URL(/^https?:\/\//i.test(value) ? value : "https://" + value);
+    return candidate.protocol === "http:" || candidate.protocol === "https:" ? candidate.toString() : null;
+  } catch { return null; }
+}
 function makeQuery(b: Bbox): string {
   const box = [b.south,b.west,b.north,b.east].join(",");
-  return '[out:json][timeout:30];(nwr["amenity"="restaurant"](' + box + '););out center tags;';
+  return '[out:json][timeout:30];(nwr["amenity"="restaurant"](' + box + '););out tags center;';
 }
 export async function discoverRestaurants(input: {jobId:string;bbox:Bbox;maxResults:number}): Promise<{count:number;sourceTimestamp:string|null}> {
   if (activeRequest) throw new Error("Another Overpass request is running. Wait for it to finish.");
@@ -40,7 +47,7 @@ export async function discoverRestaurants(input: {jobId:string;bbox:Bbox;maxResu
           randomUUID(),input.jobId,"osm_overpass",item.type,String(item.id),
           tags.name || null,[tags.amenity,tags.cuisine].filter(Boolean).join(" · ") || "restaurant",
           addressFrom(tags),tags.phone || tags["contact:phone"] || tags.mobile || null,
-          tags.website || tags["contact:website"] || null,tags.email || tags["contact:email"] || null,
+          safeWebsite(tags.website || tags["contact:website"] || undefined),tags.email || tags["contact:email"] || null,
           "https://www.openstreetmap.org/" + item.type + "/" + item.id,observedAt,JSON.stringify(item)
         );
         count += Number(result.changes);
