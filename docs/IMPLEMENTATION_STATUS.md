@@ -25,9 +25,9 @@ The repository contains an early Goal 1 discovery prototype. It is not a product
 
 ## Documented, not yet implemented
 
-- Pakistan-wide geographic registry and versioned boundary data.
-- Tile planner and persistent resumable nationwide batch jobs.
-- Pause/resume/cancel and per-tile progress UI/API.
+- Versioned Pakistan-wide geographic registry and authoritative municipal boundary data.
+- Multi-city nationwide batch orchestration.
+- Pause/cancel controls (failed/interrupted tile retry and per-tile progress are implemented).
 - Local Pakistan/regional OSM extract importer.
 - Stable-ID deduplication across overlapping tiles and sources.
 - Additional external source adapters beyond OSM and operator-supplied CSV.
@@ -41,8 +41,8 @@ The repository contains an early Goal 1 discovery prototype. It is not a product
 
 ## Important limitations
 
-- The current API requires an operator-supplied WGS84 bounding box and enforces a small area limit.
-- It only searches OSM restaurant tags; it does not cover all Pakistani businesses or all cities.
+- The operator must look up and select a city/place boundary; the selected bounding box is tiled automatically.
+- It searches configured OSM business categories, but does not cover every business or every city.
 - OSM may contain few or no restaurant phone/website tags in a given area.
 - A missing field means the source did not provide it, not that the business lacks it.
 - The adapter intentionally does not use Google Maps.
