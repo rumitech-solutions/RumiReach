@@ -99,7 +99,7 @@ export default function App() {
     fetch("/api/candidates?" + params.toString(), { signal: controller.signal })
       .then(async response => { if (!response.ok) throw new Error("Could not load saved records."); return response.json() as Promise<DirectoryResponse>; })
       .then(data => { setCandidates(data.items); setTotal(data.total); setTotalPages(Math.max(1, data.totalPages)); setCategories(data.categories); setStats(data.stats); setError(""); })
-      .catch(reason => { if (reason.name !== "AbortError") setError(reason instanceof Error ? reason.message : "Could not load records."); });
+      .catch(reason => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason instanceof Error ? reason.message : "Could not load records."); });
     return () => controller.abort();
   }, [page, query, category, review, sort]);
 
