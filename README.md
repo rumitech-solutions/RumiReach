@@ -11,9 +11,20 @@ RumiReach is a local-first CSV business-lead workspace by RumiTech Solutions. Im
 3. Normalize website URLs and map common field names for category, address, phone, website, email and source URL.
 4. Store imported values locally as unverified source observations.
 5. Search and filter on the server, browse paginated results, manually review, and export the full filtered result set through a streamed CSV response.
-6. Edit one shared WhatsApp message draft; open a selected business chat with the message prefilled for the operator to review and send manually. The draft is saved in the current browser.
+6. Edit one shared WhatsApp message draft; it remains saved in browser local storage and supports business-name/category placeholders.
+7. Optional WAHA integration sends only after the operator records explicit opt-in evidence for that contact. Opt-outs are suppressed; local safety limits and a per-send confirmation are enforced.
 
-The dashboard is CSV-first. Large files are read incrementally in the browser and committed in batches, so the full CSV does not need to be held in memory at once. If a batch fails, previously committed batches remain saved and should be checked before retrying. WhatsApp integration only opens a user-initiated chat with prefilled text; RumiReach does not send messages, automate outreach, or access WhatsApp accounts. The draft is stored in browser local storage. It does not perform live business discovery or connect to OSM, Overpass, Nominatim, Google Places, or other discovery providers. The repository retains some legacy schema/modules from the earlier prototype, but the current API and dashboard do not expose or run those discovery flows.
+The dashboard is CSV-first. Large files are read incrementally in the browser and committed in batches, so the full CSV does not need to be held in memory at once. If a batch fails, previously committed batches remain saved and should be checked before retrying. Without WAHA configured, the existing click-to-open draft workflow remains available. With WAHA configured, RumiReach sends only to contacts with recorded explicit opt-in evidence and after per-message operator confirmation. WAHA is an unofficial WhatsApp Web integration and may carry account-restriction risk; it is not an official Meta API. It does not perform live business discovery or connect to OSM, Overpass, Nominatim, Google Places, or other discovery providers. The repository retains some legacy schema/modules from the earlier prototype, but the current API and dashboard do not expose or run those discovery flows.
+
+## Optional WAHA setup
+
+Configure the API process environment (never the browser) with:
+
+- `WAHA_BASE_URL=http://127.0.0.1:3000`
+- `WAHA_SESSION=default`
+- `WAHA_API_KEY=<your WAHA API key>`
+
+Start WAHA locally, pair its session with the WhatsApp account using the WAHA QR flow, then restart RumiReach API. RumiReach intentionally accepts only localhost WAHA endpoints. The dashboard shows connection status. For each contact, choose **Opted in** and record when/how permission was given; choose **Opted out** to suppress future sends. Each send requires confirmation and is limited to one message per contact per 24 hours, at least 30 seconds apart, and 20 sends per local day. These are conservative local guardrails, not WhatsApp-approved quotas or a guarantee against account restrictions. WAHA is an unofficial integration; for supported business messaging use the official Meta WhatsApp Cloud API.
 
 ## Data-use responsibility
 

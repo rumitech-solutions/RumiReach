@@ -16,7 +16,10 @@ RumiReach is now a local-first CSV business-lead workspace. The dashboard no lon
 - Candidate search, category/status filters, sorting and counts run server-side. The UI loads 25 rows per page rather than loading the whole database.
 - CSV export streams the entire filtered result set from the API; the browser does not build one giant export string.
 - A single shared WhatsApp draft is editable in the dashboard and saved in browser local storage. Business-name and category placeholders are personalized when a row's WhatsApp action is clicked.
-- The WhatsApp action opens `wa.me` with a prefilled message. The operator must review and press Send in WhatsApp; RumiReach does not send messages or automate outreach.
+- One shared WhatsApp draft remains editable and browser-persisted, with business-name/category placeholders.
+- Per-lead WhatsApp consent is stored with evidence; opt-outs suppress sending and a public phone number is never treated as consent.
+- Optional WAHA integration sends only to explicitly opted-in contacts after per-message operator confirmation. Local guardrails enforce a 30-second gap, 20 messages per local day, and one send per contact per 24 hours.
+- WAHA URL is restricted to localhost and its API key stays server-side. WAHA is an unofficial WhatsApp Web integration; account restrictions remain possible.
 - Website URL normalization and safe source URL fallback.
 - Field-level source observations are stored as unverified; imported data is not automatically represented as verified.
 - Dashboard supports CSV upload, record search, category and review-status filters, sorting, manual review status changes, and filtered CSV export.
@@ -28,7 +31,7 @@ RumiReach is now a local-first CSV business-lead workspace. The dashboard no lon
 - Live business discovery from OSM, Overpass, Nominatim, Overture or Google Places.
 - Automated Google Maps scraping or a scraper runner.
 - Website crawling/contact enrichment.
-- Automated WhatsApp sending, bulk messaging or automated outreach. Manual click-to-open WhatsApp drafts are implemented.
+- Unsolicited/bulk WhatsApp messaging, sending without opt-in evidence, and unattended campaign blasts. One-contact-at-a-time WAHA sending is implemented behind consent and operator confirmation.
 - Hosted multi-tenant SaaS.
 
 Some legacy OSM/geography/tile source files, schema tables and historical documentation remain in the repository from the earlier prototype. They are not imported by the current API entrypoint and are not exposed in the current dashboard. Existing local SQLite data is not automatically deleted.
