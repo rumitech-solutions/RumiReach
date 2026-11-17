@@ -8,7 +8,7 @@ ensureMatchingSchema();
 const app=Fastify({logger:true,bodyLimit:2_000_000});
 const HOST="127.0.0.1",PORT=Number(process.env.PORT||4317);
 app.get("/api/health",async()=>({ok:true,app:"RumiReach",version:"0.2.0"}));
-app.get("/api/candidates",async()=>db.prepare("SELECT id,job_id,source_object_type,source_object_id,name,category,address,phone_raw,website_url,public_email,source_url,observed_at,review_status FROM candidates ORDER BY observed_at DESC LIMIT 5000").all());
+app.get("/api/candidates",async()=>db.prepare("SELECT id,job_id,source_object_type,source_object_id,name,category,address,phone_raw,website_url,public_email,source_url,observed_at,review_status FROM candidates WHERE source_id='user_csv_import' ORDER BY observed_at DESC LIMIT 5000").all());
 app.post("/api/import/csv",async(request,reply)=>{
  const body=request.body as{filename?:string;csv?:string};
  if(typeof body?.csv!=="string"||!body.csv.trim())return reply.code(400).send({error:"Provide CSV text in the csv field."});
