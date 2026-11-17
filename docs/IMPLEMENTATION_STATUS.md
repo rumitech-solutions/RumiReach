@@ -33,7 +33,6 @@ The repository contains an early Goal 1 discovery prototype. It is not a product
 - Additional external source adapters beyond OSM and operator-supplied CSV.
 - Merge rollback and split/reassign workflow; current automatic links preserve original source records but cannot yet be undone in the UI.
 - Source policy version snapshots.
-- Pakistani phone normalization.
 - Candidate-to-lead promotion and lead management.
 - CSV export and data-quality report.
 - Full API integration tests, Windows installation verification, backup/restore.
