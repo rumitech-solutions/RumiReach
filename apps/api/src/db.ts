@@ -25,3 +25,5 @@ db.prepare("INSERT OR IGNORE INTO sources (id,name,terms_url,attribution,enabled
   "osm_overpass", "OpenStreetMap via Overpass", "https://www.openstreetmap.org/copyright",
   "© OpenStreetMap contributors — data available under the Open Database License (ODbL)", 1, "2026-11-17"
 );
+
+db.exec("CREATE TABLE IF NOT EXISTS geocode_cache (query_key TEXT PRIMARY KEY, result_json TEXT NOT NULL, cached_at TEXT NOT NULL);");
