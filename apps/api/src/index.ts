@@ -68,7 +68,7 @@ app.post("/api/import/csv",async(request,reply)=>{
       const email=(row.email||row.public_email||"").trim();
       const sourceUrl=sourceUrlFor(row,index);
       const candidateId=randomUUID(),observedAt=new Date().toISOString();
-      const values:Record<string,string|null>={name,category,address:address||null,phone:phone||null,website,email:email||null};
+      const values:Record<string,string|null>={name,category:(row.category||row.business_category||"").trim()||null,address:address||null,phone:phone||null,website,email:email||null};
       insertCandidate.run(candidateId,jobId,sourceId,"csv_row",batchId+":"+(index+2),name,category,address||null,phone||null,website,email||null,sourceUrl,observedAt,JSON.stringify({filename,rowNumber:index+2,values:row}));
       for(const [field,value] of Object.entries(values)) if(value) insertObservation.run(randomUUID(),candidateId,sourceId,field,value,sourceUrl,observedAt,null,"unverified");
       imported++;
