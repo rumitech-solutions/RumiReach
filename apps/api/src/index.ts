@@ -119,7 +119,7 @@ async function processDiscoveryJob(jobId:string):Promise<void>{
   const updateTile=db.prepare("UPDATE discovery_tiles SET status=?,candidate_count=?,error_message=?,started_at=COALESCE(started_at,?),finished_at=? WHERE id=?");
   let total=job.candidate_count;
   let sourceTimestamp=job.source_timestamp;
-  for(const tile of next.iterate(jobId) as Iterable<{id:string;bbox_south:number;bbox_west:number;bbox_north:number;bbox_east:number}>){
+  for(const tile of next.all(jobId) as Array<{id:string;bbox_south:number;bbox_west:number;bbox_north:number;bbox_east:number}>){
    if(total>=job.max_results) { updateTile.run("skipped",0,"Job result limit reached",null,new Date().toISOString(),tile.id); continue; }
    const startedAt=new Date().toISOString();
    updateTile.run("running",0,null,startedAt,null,tile.id);
@@ -161,11 +161,12 @@ app.post("/api/jobs/:id/resume",async(request,reply)=>{
  const job=db.prepare("SELECT status FROM search_jobs WHERE id=?").get(id) as {status:string}|undefined;
  if(!job) return reply.code(404).send({error:"Job not found."});
  if(runningJobs.has(id) || job.status==="running") return reply.code(409).send({error:"This job is already running."});
- const retry=db.prepare("UPDATE discovery_tiles SET status='queued',error_message=NULL,started_at=NULL,finished_at=NULL WHERE job_id=? AND status='failed'").run(id);
- if(!retry.changes) return reply.code(409).send({error:"No failed tiles are available to retry."});
+ const retry=db.prepare("UPDATE discovery_tiles SET status='queued',error_message=NULL,started_at=NULL,finished_at=NULL WHERE job_id=? AND status IN ('failed','running')").run(id);
+ const queued=(db.prepare("SELECT COUNT(*) AS count FROM discovery_tiles WHERE job_id=? AND status='queued'").get(id) as {count:number}).count;
+ if(!queued) return reply.code(409).send({error:"No queued or failed tiles are available to retry."});
  db.prepare("UPDATE search_jobs SET status='queued',error_message=NULL,finished_at=NULL WHERE id=?").run(id);
  void processDiscoveryJob(id);
- return {jobId:id,status:"queued",retriedTiles:retry.changes};
+ return {jobId:id,status:"queued",retriedTiles:retry.changes,queuedTiles:queued};
 });
 app.get("/api/jobs",async()=>db.prepare("SELECT id,category,city,locality,status,candidate_count,error_message,source_timestamp,created_at,finished_at FROM search_jobs ORDER BY created_at DESC LIMIT 100").all());
 app.listen({host:HOST,port:PORT}).catch(error=>{app.log.error(error);process.exit(1);});
