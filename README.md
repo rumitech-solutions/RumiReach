@@ -4,7 +4,7 @@
 
 An intelligent client-acquisition workspace by RumiTech Solutions. RumiReach helps discover businesses from permitted public sources, organize and verify business information, qualify potential clients, and manage respectful outreach.
 
-**Status:** research baseline committed; Goal 1 implementation is next.
+**Status:** initial Goal 1 discovery prototype committed; Windows installation and runtime validation are still pending.
 
 ## Product stages
 1. Discover and collect business leads.
@@ -29,6 +29,8 @@ Target: 50 unique restaurants in Gulshan-e-Iqbal, Karachi. This is a validation 
 ## Documentation
 - [PRD](docs/PRD.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Implementation status](docs/IMPLEMENTATION_STATUS.md)
+- [Pilot area definition](docs/PILOT_AREA.md)
 - [Data sources and compliance](docs/DATA_SOURCES_AND_COMPLIANCE.md)
 - [Data model](docs/DATA_MODEL.md)
 - [Security and privacy](docs/SECURITY_AND_PRIVACY.md)
