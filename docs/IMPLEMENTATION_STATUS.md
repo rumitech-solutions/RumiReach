@@ -2,7 +2,9 @@
 
 ## Initial Goal 1 vertical slice
 
-A first prototype has been committed. It is an early development build, not a production-ready release. It has not yet been installed or executed on the user's Windows machine, and the CI workflow has not reported a completed run.
+A first prototype has been committed. It is an early development build, not a production-ready release.
+
+**CI:** GitHub Actions successfully completed npm install, TypeScript typecheck, and production build on Ubuntu for the current prototype commit. Windows runtime verification is still pending.
 
 Implemented in source:
 - React + TypeScript + Vite dashboard shell.
@@ -12,7 +14,7 @@ Implemented in source:
 - One bounded Overpass restaurant query at a time per API process.
 - Candidate fields for name, category, address, phone, website, email, source object URL, observation timestamp, and raw source payload.
 - Basic candidate review status changes.
-- Initial GitHub Actions typecheck/build workflow.
+- GitHub Actions typecheck/build workflow.
 
 Not yet implemented:
 - Reviewed Gulshan-e-Iqbal boundary / bounding box.
