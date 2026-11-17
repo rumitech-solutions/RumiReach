@@ -38,22 +38,37 @@ export async function discoverRestaurants(input: {jobId:string;bbox:Bbox;maxResu
     const payload = await response.json() as {elements?:OsmElement[];osm3s?:{timestamp_osm_base?:string}};
     const items = (payload.elements || []).slice(0,input.maxResults);
     const observedAt = new Date().toISOString();
+    const sourceTimestamp = payload.osm3s?.timestamp_osm_base || null;
     const insert = db.prepare("INSERT OR IGNORE INTO candidates (id,job_id,source_id,source_object_type,source_object_id,name,category,address,phone_raw,website_url,public_email,source_url,observed_at,raw_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    const observation = db.prepare("INSERT OR IGNORE INTO field_observations (id,candidate_id,source_id,field_name,field_value,source_url,observed_at,source_timestamp,verification_status,confidence) VALUES (?,?,?,?,?,?,?,?,?,NULL)");
     const save = db.transaction((elements:OsmElement[]) => {
       let count = 0;
       for (const item of elements) {
         const tags = item.tags || {};
+        const candidateId = randomUUID();
+        const sourceUrl = "https://www.openstreetmap.org/" + item.type + "/" + item.id;
+        const values: Record<string,string|null> = {
+          name: tags.name || null,
+          category: [tags.amenity,tags.cuisine].filter(Boolean).join(" · ") || "restaurant",
+          address: addressFrom(tags),
+          phone: tags.phone || tags["contact:phone"] || tags.mobile || null,
+          website: safeWebsite(tags.website || tags["contact:website"] || undefined),
+          email: tags.email || tags["contact:email"] || null
+        };
         const result = insert.run(
-          randomUUID(),input.jobId,"osm_overpass",item.type,String(item.id),
-          tags.name || null,[tags.amenity,tags.cuisine].filter(Boolean).join(" · ") || "restaurant",
-          addressFrom(tags),tags.phone || tags["contact:phone"] || tags.mobile || null,
-          safeWebsite(tags.website || tags["contact:website"] || undefined),tags.email || tags["contact:email"] || null,
-          "https://www.openstreetmap.org/" + item.type + "/" + item.id,observedAt,JSON.stringify(item)
+          candidateId,input.jobId,"osm_overpass",item.type,String(item.id),
+          values.name,values.category,values.address,values.phone,values.website,values.email,
+          sourceUrl,observedAt,JSON.stringify(item)
         );
-        count += Number(result.changes);
+        if (Number(result.changes)) {
+          count += 1;
+          for (const [field,value] of Object.entries(values)) {
+            if (value) observation.run(randomUUID(),candidateId,"osm_overpass",field,value,sourceUrl,observedAt,sourceTimestamp,"unverified");
+          }
+        }
       }
       return count;
     });
-    return {count:save(items),sourceTimestamp:payload.osm3s?.timestamp_osm_base || null};
+    return {count:save(items),sourceTimestamp};
   } finally { activeRequest = false; }
 }
