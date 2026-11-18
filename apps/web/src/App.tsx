@@ -18,6 +18,58 @@ function makeWhatsAppMessage(draft: string, candidate: Candidate) {
   return draft.replace(/\{business_name\}/gi, candidate.name || "there").replace(/\{category\}/gi, candidate.category || "your business").trim();
 }
 
+const MEDIA_DB_NAME = "rumireach-media";
+const MEDIA_STORE_NAME = "assets";
+const OUTREACH_IMAGE_KEY = "whatsapp-outreach-image";
+const MAX_OUTREACH_IMAGE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_OUTREACH_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+function openMediaDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(MEDIA_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(MEDIA_STORE_NAME)) request.result.createObjectStore(MEDIA_STORE_NAME);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Could not open local image storage."));
+  });
+}
+
+async function persistOutreachImage(file: File | null) {
+  const database = await openMediaDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(MEDIA_STORE_NAME, "readwrite");
+    const store = transaction.objectStore(MEDIA_STORE_NAME);
+    if (file) store.put(file, OUTREACH_IMAGE_KEY);
+    else store.delete(OUTREACH_IMAGE_KEY);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error("Could not save the outreach image."));
+    transaction.onabort = () => reject(transaction.error || new Error("Image storage transaction was cancelled."));
+  }).finally(() => database.close());
+}
+
+async function restoreOutreachImage(): Promise<File | null> {
+  const database = await openMediaDatabase();
+  return new Promise((resolve, reject) => {
+    const request = database.transaction(MEDIA_STORE_NAME, "readonly").objectStore(MEDIA_STORE_NAME).get(OUTREACH_IMAGE_KEY);
+    request.onsuccess = () => {
+      const stored = request.result as Blob | undefined;
+      database.close();
+      resolve(stored ? new File([stored], (stored as File).name || "rumireach-outreach-image", { type: stored.type || "image/jpeg" }) : null);
+    };
+    request.onerror = () => { database.close(); reject(request.error || new Error("Could not restore the outreach image.")); };
+  });
+}
+
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary);
+}
+
 async function streamCsvFile(file: File, sendBatch: (rows: CsvRow[], startRow: number) => Promise<void>) {
   const reader = file.stream().getReader();
   const decoder = new TextDecoder("utf-8", { fatal: false });
@@ -101,13 +153,23 @@ export default function App() {
   const [review, setReview] = useState("all");
   const [sort, setSort] = useState("newest");
   const [whatsappDraft, setWhatsappDraft] = useState(() => localStorage.getItem("rumireach.whatsappDraft") || DEFAULT_WHATSAPP_DRAFT);
+  const [whatsappImage, setWhatsappImage] = useState<File | null>(null);
+  const [whatsappImagePreview, setWhatsappImagePreview] = useState("");
   const [wahaEnabled, setWahaEnabled] = useState(() => localStorage.getItem("rumireach.wahaEnabled") === "true");
   const [wahaStatus, setWahaStatus] = useState("WAHA is disabled. WhatsApp buttons open the editable draft.");
   const [wahaConnected, setWahaConnected] = useState(false);
   const [sendingId, setSendingId] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
+  const imageInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => { localStorage.setItem("rumireach.whatsappDraft", whatsappDraft); }, [whatsappDraft]);
+  useEffect(() => { void restoreOutreachImage().then(setWhatsappImage).catch(() => setError("Could not restore the saved WhatsApp image from this browser.")); }, []);
+  useEffect(() => {
+    if (!whatsappImage) { setWhatsappImagePreview(""); return; }
+    const objectUrl = URL.createObjectURL(whatsappImage);
+    setWhatsappImagePreview(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [whatsappImage]);
   useEffect(() => { localStorage.setItem("rumireach.wahaEnabled", String(wahaEnabled)); if (!wahaEnabled) { setWahaConnected(false); setWahaStatus("WAHA is disabled. WhatsApp buttons open the editable draft."); return; } setWahaStatus("Checking WAHA connection…"); fetch("/api/whatsapp/status").then(r => r.json()).then(data => { setWahaConnected(Boolean(data.connected)); setWahaStatus(data.message || "WAHA status unavailable."); }).catch(() => setWahaStatus("Could not check WAHA connection.")); }, [wahaEnabled]);
 
   useEffect(() => {
@@ -179,21 +241,73 @@ export default function App() {
     setMessage(status === "opted_in" ? "Opt-in consent evidence saved." : "Contact suppressed from WhatsApp sending.");
   }
 
+  async function chooseWhatsappImage(file?: File) {
+    if (!file) return;
+    if (!ALLOWED_OUTREACH_IMAGE_TYPES.includes(file.type)) { setError("Choose a JPG, PNG or WebP image."); if (imageInput.current) imageInput.current.value = ""; return; }
+    if (file.size > MAX_OUTREACH_IMAGE_BYTES) { setError("The shared image must be 5 MB or smaller."); if (imageInput.current) imageInput.current.value = ""; return; }
+    try {
+      await persistOutreachImage(file);
+      setWhatsappImage(file);
+      setError("");
+      setMessage("Shared WhatsApp image saved in this browser.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not save the WhatsApp image.");
+    }
+  }
+
+  async function clearWhatsappImage() {
+    try {
+      await persistOutreachImage(null);
+      setWhatsappImage(null);
+      if (imageInput.current) imageInput.current.value = "";
+      setMessage("Shared image removed.");
+      setError("");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not remove the saved image.");
+    }
+  }
+
   async function sendWhatsApp(candidate: Candidate) {
     if (!wahaConnected) { setError("WAHA is not connected. Configure and start WAHA first."); return; }
     if (candidate.whatsapp_consent_status !== "opted_in") { setError("Only explicitly opted-in contacts can receive WhatsApp messages."); return; }
     const message = makeWhatsAppMessage(whatsappDraft, candidate);
-    if (!window.confirm("Send this message to " + (candidate.name || "this contact") + " via your connected WhatsApp account?")) return;
+    if (!window.confirm("Send this " + (whatsappImage ? "image and caption" : "message") + " to " + (candidate.name || "this contact") + " via your connected WhatsApp account?")) return;
     setSendingId(candidate.id); setError(""); setMessage("");
-    try { const response = await fetch("/api/candidates/" + candidate.id + "/whatsapp-send", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || "WhatsApp send failed."); setMessage("WhatsApp message sent to " + (candidate.name || "contact") + "."); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "WhatsApp send failed."); } finally { setSendingId(""); }
+    try {
+      const image = whatsappImage ? { data: await fileToBase64(whatsappImage), mimetype: whatsappImage.type, filename: whatsappImage.name } : undefined;
+      const response = await fetch("/api/candidates/" + candidate.id + "/whatsapp-send", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message, ...(image ? { image } : {}) }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "WhatsApp send failed.");
+      setMessage((whatsappImage ? "Image and caption sent to " : "WhatsApp message sent to ") + (candidate.name || "contact") + ".");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "WhatsApp send failed."); } finally { setSendingId(""); }
   }
 
-  function openWhatsApp(candidate: Candidate) {
+  async function openWhatsApp(candidate: Candidate) {
     const phone = whatsappNumber(candidate.phone_raw || "");
     if (!phone) { setError("This business does not have a usable phone number."); return; }
     const text = makeWhatsAppMessage(whatsappDraft, candidate);
+    if (whatsappImage && typeof navigator.share === "function" && typeof navigator.canShare === "function") {
+      const shareData: ShareData = { title: "RumiTech Solutions", text, files: [whatsappImage] };
+      if (navigator.canShare(shareData)) {
+        try {
+          await navigator.share(shareData);
+          setMessage("Share sheet opened. Choose WhatsApp to share the message with the image.");
+          return;
+        } catch (reason) {
+          if (reason instanceof DOMException && reason.name === "AbortError") return;
+        }
+      }
+    }
     window.open("https://wa.me/" + phone + "?text=" + encodeURIComponent(text), "_blank", "noopener,noreferrer");
+    if (whatsappImage) {
+      const imageUrl = URL.createObjectURL(whatsappImage);
+      const download = document.createElement("a");
+      download.href = imageUrl;
+      download.download = whatsappImage.name || "rumireach-outreach-image";
+      download.click();
+      window.setTimeout(() => URL.revokeObjectURL(imageUrl), 1500);
+      setMessage("WhatsApp draft opened and the shared image downloaded. Attach the downloaded image in the chat before sending.");
+    }
   }
   function chooseFile(file?: File) { if (file && file.name.toLowerCase().endsWith(".csv")) { setCsvFile(file); setMessage(""); setError(""); setProgress(""); } }
   const pageRows = useMemo(() => candidates, [candidates]);
@@ -226,7 +340,18 @@ export default function App() {
           <div className="whatsapp-composer">
             <div className="whatsapp-composer-heading"><div><span className="section-kicker">03 / PERSONAL OUTREACH</span><h3>WhatsApp message draft</h3><p>One editable message for your outreach. It is saved in this browser and personalized with each business name.</p></div><button className="draft-reset" onClick={() => setWhatsappDraft(DEFAULT_WHATSAPP_DRAFT)}>Reset template</button></div>
             <textarea aria-label="Editable WhatsApp message draft" value={whatsappDraft} onChange={e => setWhatsappDraft(e.target.value)} placeholder="Write your WhatsApp message…"/>
-            <div className="draft-footer"><span>Use <code>{'{business_name}'}</code> and <code>{'{category}'}</code> to personalize each message.</span><span className="draft-saved"><i/> Saved in this browser</span></div><details className="waha-settings"><summary><span>Optional integration settings</span><span className="waha-mode">{wahaEnabled ? "WAHA enabled" : "Draft mode · default"}</span></summary><div className="waha-settings-body"><label className="waha-toggle"><input type="checkbox" checked={wahaEnabled} onChange={e => setWahaEnabled(e.target.checked)}/><span><strong>Enable WAHA sending</strong><small>Off by default. When disabled, every WhatsApp button opens your editable draft in WhatsApp.</small></span></label><div className={"waha-status" + (wahaConnected ? " connected" : "")}><span>{wahaConnected ? "●" : "○"}</span> {wahaStatus}</div><p>To configure WAHA, set <code>WAHA_BASE_URL</code>, <code>WAHA_SESSION</code> and <code>WAHA_API_KEY</code> in the local API environment, start WAHA and pair the account. The API key stays server-side. After enabling, contacts still need recorded opt-in consent before the separate WAHA send action is available.</p></div></details>
+            <div className="image-attachment">
+              <input ref={imageInput} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => void chooseWhatsappImage(e.target.files?.[0])}/>
+              <div className="image-attachment-preview">
+                {whatsappImagePreview ? <img src={whatsappImagePreview} alt="Shared WhatsApp attachment preview"/> : <span className="image-attachment-placeholder">▧</span>}
+                <div><strong>{whatsappImage ? whatsappImage.name : "No shared image selected"}</strong><small>{whatsappImage ? (whatsappImage.size / 1024 / 1024).toFixed(2) + " MB · Used for every business" : "Add one JPG, PNG or WebP image for all business drafts (max 5 MB)."}</small></div>
+              </div>
+              <div className="image-attachment-actions">
+                <button className="draft-reset" onClick={() => imageInput.current?.click()}>{whatsappImage ? "Change image" : "＋ Add shared image"}</button>
+                {whatsappImage && <button className="draft-reset image-remove" onClick={() => void clearWhatsappImage()}>Remove</button>}
+              </div>
+            </div>
+            <div className="draft-footer"><span>Use <code>{'{business_name}'}</code> and <code>{'{category}'}</code> to personalize each message.</span><span className="draft-saved"><i/> Saved in this browser</span></div><details className="waha-settings"><summary><span>Optional integration settings</span><span className="waha-mode">{wahaEnabled ? "WAHA enabled" : "Draft mode · default"}</span></summary><div className="waha-settings-body"><label className="waha-toggle"><input type="checkbox" checked={wahaEnabled} onChange={e => setWahaEnabled(e.target.checked)}/><span><strong>Enable WAHA sending</strong><small>Off by default. When disabled, every WhatsApp button opens your editable draft in WhatsApp.</small></span></label><div className={"waha-status" + (wahaConnected ? " connected" : "")}><span>{wahaConnected ? "●" : "○"}</span> {wahaStatus}</div><p>To configure WAHA, set <code>WAHA_BASE_URL</code>, <code>WAHA_SESSION</code> and <code>WAHA_API_KEY</code> in the local API environment, start WAHA and pair the account. The API key stays server-side. After enabling, contacts still need recorded opt-in consent before the separate WAHA send action is available. The selected shared image is sent with the personalized draft as its caption.</p></div></details>
           </div>
           <div className="filter-bar"><div className="search-box"><span>⌕</span><input value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} placeholder="Search businesses, phone, location…"/></div><select aria-label="Category filter" value={category} onChange={e => { setCategory(e.target.value); setPage(1); }}><option value="all">All categories</option>{categories.map(value => <option key={value} value={value}>{value}</option>)}</select><select aria-label="Review filter" value={review} onChange={e => { setReview(e.target.value); setPage(1); }}><option value="all">All statuses</option><option value="pending">Pending</option><option value="accepted">Accepted</option><option value="needs_review">Needs review</option><option value="rejected">Rejected</option></select><select aria-label="Sort records" value={sort} onChange={e => { setSort(e.target.value); setPage(1); }}><option value="newest">Recently added</option><option value="name">Business name</option><option value="category">Category</option></select></div>
           {!pageRows.length ? <div className="empty-state"><div className="empty-art">▤</div><strong>{stats.total ? "No matching businesses" : "Your directory starts here"}</strong><p>{stats.total ? "Try another search or adjust your filters." : "Import your first CSV dataset to see your business records appear here."}</p><button className="secondary-button" onClick={() => document.getElementById("import")?.scrollIntoView({ behavior: "smooth" })}>Import a CSV <span>→</span></button></div> : <div className="table-scroll"><table><thead><tr><th>BUSINESS</th><th>LOCATION</th><th>CONTACT</th><th>ONLINE PRESENCE</th><th>STATUS</th><th>WHATSAPP CONSENT</th><th></th></tr></thead><tbody>{pageRows.map(c => <tr key={c.id}><td><div className="business-cell"><span className="business-avatar">{(c.name || "?").trim().charAt(0).toUpperCase()}</span><span><strong>{c.name || "Unnamed business"}</strong><small>{c.category || "Uncategorized"}</small></span></div></td><td><span className="address-cell">{c.address || "—"}</span></td><td><div className="contact-actions">{c.phone_raw ? <><a className="phone-link" href={"tel:" + c.phone_raw}>{c.phone_raw}</a><button className="whatsapp-button" onClick={() => openWhatsApp(c)} title={"Open WhatsApp draft for " + c.name}>◉ WhatsApp</button></> : <span className="no-phone">No phone number</span>}</div></td><td>{c.website_url ? <a className="website-link" href={c.website_url} target="_blank" rel="noreferrer">Visit website ↗</a> : c.public_email ? <a className="website-link" href={"mailto:" + c.public_email}>{c.public_email}</a> : "—"}{c.public_email && c.website_url && <small className="email-sub">{c.public_email}</small>}</td><td><select className={"status-select status-" + c.review_status} aria-label={"Review status for " + c.name} value={c.review_status} onChange={e => void setReviewStatus(c.id, e.target.value)}><option value="pending">Pending</option><option value="accepted">Accepted</option><option value="needs_review">Needs review</option><option value="rejected">Rejected</option></select></td><td><div className="consent-actions"><select aria-label={"WhatsApp consent for " + c.name} value={c.whatsapp_consent_status || "not_confirmed"} onChange={e => { if (e.target.value === "opted_in" || e.target.value === "opted_out") void setWhatsAppConsent(c, e.target.value); }}><option value="not_confirmed">Not confirmed</option><option value="opted_in">Opted in</option><option value="opted_out">Opted out</option></select>{wahaEnabled && c.whatsapp_consent_status === "opted_in" && <button className="whatsapp-button" disabled={!wahaConnected || sendingId === c.id} onClick={() => void sendWhatsApp(c)}>{sendingId === c.id ? "Sending…" : "Send via WAHA"}</button>}</div></td><td><span className="row-menu" title={"Imported " + new Date(c.observed_at).toLocaleDateString()}>···</span></td></tr>)}</tbody></table></div>}
