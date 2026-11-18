@@ -95,7 +95,7 @@ async function readApiJson<T>(response: Response, action: string): Promise<T> {
     const preview = body.replace(/\s+/g, " ").slice(0, 180);
     throw new Error(`${action}: API returned a non-JSON response (HTTP ${response.status}). ${preview || "Check the API terminal for its error."}`);
   }
-  if (!response.ok) throw new Error(data?.error || `${action} failed (HTTP ${response.status}).`);
+  if (!response.ok) throw new Error(data?.error || data?.message || `${action} failed (HTTP ${response.status}).`);
   return data as T;
 }
 
@@ -210,19 +210,18 @@ export default function App() {
     if (category !== "all") params.set("category", category);
     if (review !== "all") params.set("status", review);
     fetch("/api/candidates?" + params.toString(), { signal: controller.signal })
-      .then(async response => { if (!response.ok) throw new Error("Could not load saved records."); return response.json() as Promise<DirectoryResponse>; })
+      .then(response => readApiJson<DirectoryResponse>(response, "Could not load saved records"))
       .then(data => { setCandidates(data.items); setTotal(data.total); setTotalPages(Math.max(1, data.totalPages)); setCategories(data.categories); setStats(data.stats); setError(""); })
       .catch(reason => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason instanceof Error ? reason.message : "Could not load records."); });
     return () => controller.abort();
   }, [page, query, category, review, sort]);
 
-  async function refresh() {
-    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE), search: query, sort });
+  async function refresh(requestedPage = page) {
+    const params = new URLSearchParams({ page: String(requestedPage), pageSize: String(PAGE_SIZE), search: query, sort });
     if (category !== "all") params.set("category", category);
     if (review !== "all") params.set("status", review);
     const response = await fetch("/api/candidates?" + params.toString());
-    if (!response.ok) throw new Error("Could not load saved records.");
-    const data = await response.json() as DirectoryResponse;
+    const data = await readApiJson<DirectoryResponse>(response, "Could not load saved records");
     setCandidates(data.items); setTotal(data.total); setTotalPages(Math.max(1, data.totalPages)); setCategories(data.categories); setStats(data.stats);
   }
 
@@ -247,7 +246,14 @@ export default function App() {
       setMessage("Imported " + formatCount(result.imported) + " businesses. " + formatCount(result.skipped) + " blank-name rows skipped; " + formatCount(result.invalidWebsite) + " invalid website values ignored.");
       setCsvFile(null); setPage(1);
       if (fileInput.current) fileInput.current.value = "";
-      setProgress(""); await refresh();
+      setProgress("");
+      try {
+        await refresh(1);
+        setError("");
+      } catch (reason) {
+        const detail = reason instanceof Error ? reason.message : "Unknown directory refresh error.";
+        setError("Import completed and saved, but the business directory could not refresh. " + detail + " Your imported records remain in the database.");
+      }
     } catch (reason) {
       const detail = reason instanceof Error ? reason.message : "CSV import failed.";
       setError(detail === "Failed to fetch"
