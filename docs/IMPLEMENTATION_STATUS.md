@@ -16,7 +16,9 @@ RumiReach is now a local-first CSV business-lead workspace. The dashboard no lon
 - Candidate search, category/status filters, sorting and counts run server-side. The UI loads 25 rows per page rather than loading the whole database.
 - CSV export streams the entire filtered result set from the API; the browser does not build one giant export string.
 - A single shared WhatsApp draft is editable in the dashboard and saved in browser local storage. Business-name and category placeholders are personalized when a row's WhatsApp action is clicked.
-- One shared WhatsApp draft remains editable and browser-persisted, with business-name/category placeholders.
+- One shared JPG, PNG or WebP outreach image (up to 5 MB) can be uploaded, previewed, replaced and removed. It is persisted in this browser's IndexedDB, separately from the message draft.
+- The default WhatsApp action uses the browser file-sharing sheet to share text + image where supported. Otherwise it opens the selected business chat with the editable text and downloads the image for manual attachment; the browser share sheet may require choosing the recipient manually.
+- Optional WAHA sending can send the selected image with the personalized draft as its caption. Image sends retain the explicit per-contact opt-in, opt-out suppression, confirmation and local rate limits; image MIME type, signature and size are checked server-side.
 - Per-lead WhatsApp consent is stored with evidence; opt-outs suppress sending and a public phone number is never treated as consent.
 - Optional WAHA integration sends only to explicitly opted-in contacts after per-message operator confirmation. Local guardrails enforce a 30-second gap, 20 messages per local day, and one send per contact per 24 hours.
 - WAHA URL is restricted to localhost and its API key stays server-side. WAHA is an unofficial WhatsApp Web integration; account restrictions remain possible.
