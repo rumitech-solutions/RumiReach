@@ -10,7 +10,8 @@ RumiReach is now a local-first CSV business-lead workspace. The dashboard no lon
 - Fastify API bound to localhost.
 - SQLite persistence under the Windows user's LocalAppData directory.
 - CSV parser supports quoted commas, escaped quotes, CRLF, duplicate-header checks, and malformed-quote errors.
-- CSV import accepts `name` or `business_name`, plus category, address, phone, website, email and source_url fields.
+- CSV import accepts `name`, `business_name`, `title`, `restaurant_name` or `business` as business-name fields, with common scraper aliases such as `complete_address`, `phone_number`, `website_url` and `link`.
+- Import responses are parsed defensively so empty/non-JSON API responses show actionable status details rather than a generic JSON parsing exception.
 - CSV files are read incrementally with the browser File Stream API and sent to the API in 500-row batches. There is no application-defined total row-count or file-size cap; practical limits depend on available RAM, disk space, browser and SQLite processing time.
 - Each batch is committed independently. If a later batch fails, earlier batches remain saved; the incomplete import must be reviewed before retrying.
 - Candidate search, category/status filters, sorting and counts run server-side. The UI loads 25 rows per page rather than loading the whole database.
