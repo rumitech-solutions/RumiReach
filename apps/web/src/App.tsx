@@ -70,6 +70,35 @@ async function fileToBase64(file: File): Promise<string> {
   return btoa(binary);
 }
 
+function normalizeCsvRow(row: CsvRow): CsvRow {
+  return {
+    ...row,
+    name: (row.name || row.business_name || row.title || row.restaurant_name || row.business || "").trim(),
+    category: (row.category || row.business_category || "").trim(),
+    address: (row.address || row.full_address || row.complete_address || "").trim(),
+    phone: (row.phone || row.phone_number || row.phone_raw || "").trim(),
+    website: (row.website || row.website_url || "").trim(),
+    email: (row.email || row.public_email || "").trim(),
+    source_url: (row.source_url || row.link || row.maps_url || row.url || "").trim()
+  };
+}
+
+async function readApiJson<T>(response: Response, action: string): Promise<T> {
+  const body = await response.text();
+  if (!body.trim()) {
+    throw new Error(`${action}: local API returned an empty response (HTTP ${response.status}). Check that the RumiReach API is running at 127.0.0.1:4317, then restart the app.`);
+  }
+  let data: any;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    const preview = body.replace(/\s+/g, " ").slice(0, 180);
+    throw new Error(`${action}: API returned a non-JSON response (HTTP ${response.status}). ${preview || "Check the API terminal for its error."}`);
+  }
+  if (!response.ok) throw new Error(data?.error || `${action} failed (HTTP ${response.status}).`);
+  return data as T;
+}
+
 async function streamCsvFile(file: File, sendBatch: (rows: CsvRow[], startRow: number) => Promise<void>) {
   const reader = file.stream().getReader();
   const decoder = new TextDecoder("utf-8", { fatal: false });
@@ -81,9 +110,12 @@ async function streamCsvFile(file: File, sendBatch: (rows: CsvRow[], startRow: n
     if (!headers) {
       headers = row.map((value, index) => (index === 0 ? value.replace(/^\uFEFF/, "") : value).trim().toLowerCase());
       if (new Set(headers).size !== headers.length) throw new Error("CSV contains duplicate column names.");
-      if (!headers.includes("name") && !headers.includes("business_name")) throw new Error('CSV must include a "name" or "business_name" column.');
+      if (!["name", "business_name", "title", "restaurant_name", "business"].some(header => headers!.includes(header))) {
+        throw new Error('CSV must include a business-name column: "name", "business_name", "title", "restaurant_name" or "business".');
+      }
     } else {
-      batch.push(Object.fromEntries(headers.map((header, index) => [header, (row[index] ?? "").trim()])));
+      const rawRow = Object.fromEntries(headers.map((header, index) => [header, (row[index] ?? "").trim()]));
+      batch.push(normalizeCsvRow(rawRow));
       nextRow++;
       if (batch.length >= 500) {
         await sendBatch(batch, batchStart);
@@ -200,26 +232,27 @@ export default function App() {
     let batchId = "";
     try {
       const started = await fetch("/api/import/csv/start", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ filename: csvFile.name }) });
-      const session = await started.json();
-      if (!started.ok) throw new Error(session.error || "Could not start import.");
+      const session = await readApiJson<{ batchId: string }>(started, "Could not start CSV import");
+      if (!session.batchId) throw new Error("The import API did not return a batch ID. Check the API terminal and try again.");
       batchId = session.batchId;
       let rowsSent = 0;
       await streamCsvFile(csvFile, async (rows, startRow) => {
         const response = await fetch("/api/import/csv/" + batchId + "/batch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rows, startRow }) });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "A CSV batch could not be saved.");
+        await readApiJson<{ received: number }>(response, "Could not save CSV batch");
         rowsSent += rows.length;
         setProgress(formatCount(rowsSent) + " rows processed…");
       });
       const completed = await fetch("/api/import/csv/" + batchId + "/complete", { method: "POST" });
-      const result = await completed.json();
-      if (!completed.ok) throw new Error(result.error || "Could not complete import.");
+      const result = await readApiJson<{ imported: number; skipped: number; invalidWebsite: number }>(completed, "Could not complete CSV import");
       setMessage("Imported " + formatCount(result.imported) + " businesses. " + formatCount(result.skipped) + " blank-name rows skipped; " + formatCount(result.invalidWebsite) + " invalid website values ignored.");
       setCsvFile(null); setPage(1);
       if (fileInput.current) fileInput.current.value = "";
       setProgress(""); await refresh();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "CSV import failed.");
+      const detail = reason instanceof Error ? reason.message : "CSV import failed.";
+      setError(detail === "Failed to fetch"
+        ? "Cannot reach the local RumiReach API. Confirm both API and web servers are running, then retry."
+        : detail);
       setProgress("Import stopped. Already saved batches remain in the database.");
     } finally { setCsvBusy(false); }
   }
@@ -334,7 +367,7 @@ export default function App() {
             <input ref={fileInput} type="file" accept=".csv,text/csv" onChange={e => chooseFile(e.target.files?.[0])}/><div className="upload-symbol"><span>↑</span></div><strong>{csvFile ? csvFile.name : "Drop your CSV file here"}</strong><p>{csvFile ? "Ready to import · " + (csvFile.size / 1024 / 1024).toFixed(2) + " MB" : "or click to browse files on your computer"}</p><span className="browse-button">Choose a file</span>
           </div><div className="import-meta"><span><b>↳</b> Streaming file reader</span><span><b>✓</b> No fixed row or file-size cap</span><span><b>◈</b> Batched local database writes</span></div>
           <div className="import-actions">{message && <div className="inline-success">✓ {message}</div>}{error && <div className="inline-error">{error}</div>}{progress && <div className="import-progress">{progress}</div>}<div className="import-submit"><span className="selected-file">{csvFile ? "Selected and ready" : "CSV files · UTF-8 supported"}</span><button className="primary-button" disabled={!csvFile || csvBusy} onClick={() => void importCsv()}>{csvBusy ? "Importing…" : "Import dataset"} <span>→</span></button></div></div>
-          <p className="helper-text">Required column: <code>name</code> or <code>business_name</code>. Optional: category, address, phone, website, email and source_url. Imported details are marked unverified until reviewed.</p>
+          <p className="helper-text">Required column: <code>name</code>, <code>business_name</code> or <code>title</code>. Also accepts restaurant_name/business, complete_address, phone_number, website_url and Maps link columns. Imported details are marked unverified until reviewed.</p>
         </section>
         <section className="panel leads-panel" id="leads"><div className="section-heading leads-heading"><div><span className="section-kicker">02 / YOUR DATABASE</span><h2>Business directory <span className="count-pill">{formatCount(total)}</span></h2><p>Search, browse and export your full filtered dataset without loading every record at once.</p></div><button className="secondary-button" disabled={!candidates.length} onClick={exportCsv}>↓ <span>Export CSV</span></button></div>
           <div className="whatsapp-composer">
