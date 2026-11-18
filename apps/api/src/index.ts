@@ -27,16 +27,16 @@ function insertRows(session: ImportSession, rows: ImportRow[], startRow: number)
   const run = db.transaction(() => {
     rows.forEach((row, offset) => {
       const rowNumber = startRow + offset;
-      const name = (row.name || row.business_name || "").trim();
+      const name = (row.name || row.business_name || row.title || row.restaurant_name || row.business || "").trim();
       if (!name) { session.skipped++; return; }
       const category = (row.category || row.business_category || "").trim() || "unknown";
-      const address = (row.address || "").trim();
-      const phone = (row.phone || row.phone_number || "").trim();
+      const address = (row.address || row.full_address || row.complete_address || "").trim();
+      const phone = (row.phone || row.phone_number || row.phone_raw || "").trim();
       const websiteRaw = (row.website || row.website_url || "").trim();
       const website = normalizeWebsite(websiteRaw);
       const email = (row.email || row.public_email || "").trim();
       if (websiteRaw && !website) session.invalidWebsite++;
-      const sourceUrl = normalizeSourceUrl(row.source_url || "", "csv-import://" + encodeURIComponent(session.filename) + "#row=" + rowNumber);
+      const sourceUrl = normalizeSourceUrl(row.source_url || row.link || row.maps_url || row.url || "", "csv-import://" + encodeURIComponent(session.filename) + "#row=" + rowNumber);
       const candidateId = randomUUID();
       const observedAt = new Date().toISOString();
       const values: Record<string, string | null> = { name, category: (row.category || row.business_category || "").trim() || null, address: address || null, phone: phone || null, website, email: email || null };
