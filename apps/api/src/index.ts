@@ -178,15 +178,41 @@ app.patch("/api/candidates/:id/whatsapp-consent", async (request, reply) => {
   const now = new Date().toISOString(); db.prepare("INSERT INTO whatsapp_consents (candidate_id,phone_e164,status,consent_method,consent_evidence,consent_at,updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(candidate_id) DO UPDATE SET phone_e164=excluded.phone_e164,status=excluded.status,consent_method=excluded.consent_method,consent_evidence=excluded.consent_evidence,consent_at=excluded.consent_at,updated_at=excluded.updated_at").run(id, phone, body.status, (body.method || "operator_attestation").slice(0, 50), body.status === "opted_in" ? evidence : null, now, now); return { ok: true, status: body.status, phone, consentAt: now };
 });
 app.post("/api/candidates/:id/whatsapp-send", async (request, reply) => {
-  const { id } = request.params as { id: string }; const body = request.body as { message?: string }; const message = (body?.message || "").trim();
-  if (!message || message.length > 4096) return reply.code(400).send({ error: "Message must contain 1–4096 characters." }); if (!WAHA_API_KEY || !isLocalWahaUrl()) return reply.code(503).send({ error: "WAHA is not configured. Set localhost WAHA_BASE_URL and WAHA_API_KEY." });
+  const { id } = request.params as { id: string };
+  const body = request.body as { message?: string; image?: { data?: string; mimetype?: string; filename?: string } };
+  const message = (body?.message || "").trim();
+  if (!message || message.length > 4096) return reply.code(400).send({ error: "Message must contain 1–4096 characters." });
+  let imagePayload: { mimetype: string; filename: string; data: string } | null = null;
+  if (body?.image) {
+    const mimetype = body.image.mimetype || "";
+    const data = (body.image.data || "").replace(/\s/g, "");
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+    if (!allowedTypes.includes(mimetype) || !data || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data)) {
+      return reply.code(400).send({ error: "Image must be a valid JPG, PNG or WebP file." });
+    }
+    const bytes = Buffer.from(data, "base64");
+    if (bytes.length < 1 || bytes.length > 5 * 1024 * 1024) return reply.code(413).send({ error: "Image must be 5 MB or smaller." });
+    const isJpeg = mimetype === "image/jpeg" && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+    const isPng = mimetype === "image/png" && bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
+    const isWebp = mimetype === "image/webp" && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP";
+    if (!isJpeg && !isPng && !isWebp) return reply.code(400).send({ error: "Image content does not match its declared file type." });
+    const filename = (body.image.filename || "rumireach-outreach-image").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100) || "rumireach-outreach-image";
+    imagePayload = { mimetype, filename, data };
+  }
+  if (!WAHA_API_KEY || !isLocalWahaUrl()) return reply.code(503).send({ error: "WAHA is not configured. Set localhost WAHA_BASE_URL and WAHA_API_KEY." });
   const candidate = db.prepare("SELECT id,phone_raw FROM candidates WHERE id=? AND source_id=?").get(id, IMPORT_SOURCE) as { id: string; phone_raw: string | null } | undefined; if (!candidate) return reply.code(404).send({ error: "Candidate not found." });
   const phone = normalizeWhatsAppNumber(candidate.phone_raw || ""); const consent = db.prepare("SELECT phone_e164,status,consent_evidence FROM whatsapp_consents WHERE candidate_id=?").get(id) as { phone_e164: string; status: string; consent_evidence: string | null } | undefined;
   if (!consent || consent.status !== "opted_in" || !consent.consent_evidence) return reply.code(403).send({ error: "Explicit opt-in evidence is required. Sending blocked." }); if (!phone || phone !== consent.phone_e164) return reply.code(409).send({ error: "Phone changed since consent. Reconfirm consent for this number." });
   const now = new Date(), dayStart = new Date(now); dayStart.setHours(0,0,0,0); const sentToday = (db.prepare("SELECT COUNT(*) AS count FROM whatsapp_send_log WHERE status=\"sent\" AND sent_at>=?").get(dayStart.toISOString()) as { count: number }).count;
   if (sentToday >= 20) return reply.code(429).send({ error: "Local safety ceiling reached: 20 sends per day." }); const lastSend = db.prepare("SELECT sent_at FROM whatsapp_send_log WHERE status=\"sent\" ORDER BY sent_at DESC LIMIT 1").get() as { sent_at: string } | undefined;
   if (lastSend && now.getTime() - Date.parse(lastSend.sent_at) < 30000) return reply.code(429).send({ error: "Wait at least 30 seconds between messages." }); const duplicate = db.prepare("SELECT id FROM whatsapp_send_log WHERE candidate_id=? AND status=\"sent\" AND sent_at>=? LIMIT 1").get(id, new Date(now.getTime()-86400000).toISOString()); if (duplicate) return reply.code(409).send({ error: "A message was already sent to this contact in the last 24 hours." });
-  try { const response = await fetch(WAHA_BASE_URL + "/api/sendText", { method: "POST", headers: { "X-Api-Key": WAHA_API_KEY, "Content-Type": "application/json", "Accept": "application/json" }, body: JSON.stringify({ session: WAHA_SESSION, chatId: phone + "@c.us", text: message }), signal: AbortSignal.timeout(15000) }); const result = await response.json().catch(() => ({})) as { id?: string; message?: string; error?: string };
+  try {
+    const endpoint = imagePayload ? "/api/sendImage" : "/api/sendText";
+    const payload = imagePayload
+      ? { session: WAHA_SESSION, chatId: phone + "@c.us", file: imagePayload, caption: message }
+      : { session: WAHA_SESSION, chatId: phone + "@c.us", text: message };
+    const response = await fetch(WAHA_BASE_URL + endpoint, { method: "POST", headers: { "X-Api-Key": WAHA_API_KEY, "Content-Type": "application/json", "Accept": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(30000) });
+    const result = await response.json().catch(() => ({})) as { id?: string; message?: string; error?: string };
     if (!response.ok) { db.prepare("INSERT INTO whatsapp_send_log (id,candidate_id,phone_e164,status,error_message,sent_at) VALUES (?,?,?,?,?,?)").run(randomUUID(), id, phone, "failed", String(result.message || result.error || "WAHA request failed").slice(0,500), now.toISOString()); return reply.code(502).send({ error: "WAHA could not send the message. Check the WAHA session." }); }
     db.prepare("INSERT INTO whatsapp_send_log (id,candidate_id,phone_e164,provider_message_id,status,sent_at) VALUES (?,?,?,?,?,?)").run(randomUUID(), id, phone, result.id || null, "sent", now.toISOString()); return { ok: true, status: "sent", providerMessageId: result.id || null, sentAt: now.toISOString() };
   } catch { return reply.code(502).send({ error: "Could not reach WAHA. No successful send was recorded." }); }
