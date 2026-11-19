@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { db } from "./db";
 import { findFieldConflicts } from "./provenance";
 import { z } from "zod";
+import { findDuplicates, type DupeRow } from "./dupes";
 import { parseCsv } from "./csv";
 import { ensureGeoData, geoStatus, getCountry, listCities, listCountries, listStates } from "./geo";
 import { MAX_CITIES_DEFAULT, MAX_CITIES_LIMIT, activeRunId, cancelScrape, listScrapes, resolveRunner, startScrape } from "./scraper";
@@ -28,7 +29,7 @@ app.get("/api/candidates", async (request) => {
   const pageSize = Math.min(100, Math.max(10, Math.floor(Number(q.pageSize) || 25)));
   const search = (q.search || "").trim().slice(0, 200);
   const category = (q.category || "").trim().slice(0, 100);
-  const status = ["pending", "accepted", "rejected", "needs_review"].includes(q.status || "") ? q.status! : "";
+  const status = ["pending", "accepted", "contacted", "rejected", "needs_review"].includes(q.status || "") ? q.status! : "";
   const where = ["source_id = ?"];
   const params: (string | number)[] = [IMPORT_SOURCE];
   if (search) {
@@ -54,7 +55,7 @@ app.get("/api/candidates/export", async (request, reply) => {
   const q = request.query as { search?: string; category?: string; status?: string; sort?: string; collection?: string; has?: string };
   const search = (q.search || "").trim().slice(0, 200);
   const category = (q.category || "").trim().slice(0, 100);
-  const status = ["pending", "accepted", "rejected", "needs_review"].includes(q.status || "") ? q.status! : "";
+  const status = ["pending", "accepted", "contacted", "rejected", "needs_review"].includes(q.status || "") ? q.status! : "";
   const where = ["source_id = ?"];
   const params: string[] = [IMPORT_SOURCE];
   if (search) {
@@ -270,12 +271,24 @@ app.post("/api/candidates/bulk", async (request, reply) => {
   const ids = Array.isArray(body?.ids) ? [...new Set(body.ids.filter((id): id is string => typeof id === "string" && id.length <= 64))] : [];
   if (!ids.length || ids.length > 500) return reply.code(400).send({ error: "Select between 1 and 500 businesses." });
   const action = body?.action || "";
-  if (!["accepted", "rejected", "needs_review", "pending", "delete"].includes(action)) return reply.code(400).send({ error: "Unknown action." });
+  if (!["accepted", "contacted", "rejected", "needs_review", "pending", "delete"].includes(action)) return reply.code(400).send({ error: "Unknown action." });
   const marks = ids.map(() => "?").join(",");
   const changed = db.transaction(() => action === "delete"
     ? db.prepare("DELETE FROM candidates WHERE source_id=? AND id IN (" + marks + ")").run(IMPORT_SOURCE, ...ids).changes
     : db.prepare("UPDATE candidates SET review_status=? WHERE source_id=? AND id IN (" + marks + ")").run(action, IMPORT_SOURCE, ...ids).changes)();
   return { ok: true, changed };
+});
+
+function loadDupes() {
+  const rows = db.prepare("SELECT id,name,address,phone_raw,review_status,observed_at FROM candidates WHERE source_id=?").all(IMPORT_SOURCE) as DupeRow[];
+  return findDuplicates(rows);
+}
+app.get("/api/duplicates", async () => { const { groups, remove } = loadDupes(); return { groups, removable: remove.length }; });
+app.post("/api/duplicates/remove", async () => {
+  const { remove } = loadDupes();
+  const del = db.prepare("DELETE FROM candidates WHERE id=? AND source_id=?");
+  db.transaction(() => { for (const id of remove) del.run(id, IMPORT_SOURCE); })();
+  return { ok: true, removed: remove.length };
 });
 
 app.delete("/api/candidates/:id", async (request, reply) => {
@@ -345,7 +358,7 @@ app.get("/api/candidates/:id/provenance", async (request, reply) => {
 });
 app.patch("/api/candidates/:id/review", async (request, reply) => {
   const params = request.params as { id: string }, body = request.body as { status?: string };
-  if (!["accepted", "rejected", "needs_review", "pending"].includes(body?.status || "")) return reply.code(400).send({ error: "Invalid review status." });
+  if (!["accepted", "contacted", "rejected", "needs_review", "pending"].includes(body?.status || "")) return reply.code(400).send({ error: "Invalid review status." });
   const result = db.prepare("UPDATE candidates SET review_status=? WHERE id=? AND source_id=?").run(body.status, params.id, IMPORT_SOURCE);
   if (!result.changes) return reply.code(404).send({ error: "Candidate not found." });
   return { ok: true };
