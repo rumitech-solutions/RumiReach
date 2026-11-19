@@ -79,6 +79,8 @@ docker compose build --pull                # Google Maps scraper (gosom/google-m
 docker compose up -d
 ```
 
+The Overview page also has a **Check for updates** button that compares the installed scraper/WAHA versions with their latest GitHub releases and shows the exact command to run (it only looks when you click).
+
 Nothing updates automatically, on purpose: WhatsApp (WAHA) and the scraper's Google Maps parsing both change behaviour between versions, so update when you choose to. To freeze a version, pin it (`image: devlikeapro/waha:<tag>` in `docker-compose.yml`, or `SCRAPER_IMAGE=gosom/google-maps-scraper:<tag>` as a build arg).
  Optional: put `WAHA_API_KEY=...` in a `.env` file next to `docker-compose.yml` to replace the default internal key (WAHA is not exposed outside the Compose network).
 

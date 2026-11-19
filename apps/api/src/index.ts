@@ -7,6 +7,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import fastifyStatic from "@fastify/static";
 import { z } from "zod";
+import { binaryVersion, latestRelease, updateStatus } from "./updates";
 import { serviceState, startService, stopService, wahaKey } from "./waha";
 import { findDuplicates, type DupeRow } from "./dupes";
 import { parseCsv } from "./csv";
@@ -310,6 +311,30 @@ async function sessionStatus(): Promise<string> {
     return sessions.find(item => item.name === WAHA_SESSION)?.status || "NOT_FOUND";
   } catch { return "UNREACHABLE"; }
 }
+
+// ---- Update check (runs only when the user clicks "Check for updates") ----
+app.get("/api/updates", async () => {
+  const runner = resolveRunner();
+  const inDocker = process.env.RUMIREACH_WAHA_EXTERNAL === "true";
+  const [scraperLatest, wahaLatest, scraperInstalled, wahaInstalled] = await Promise.all([
+    latestRelease("gosom/google-maps-scraper"),
+    latestRelease("devlikeapro/waha"),
+    runner.mode === "binary" && runner.path ? binaryVersion(runner.path) : Promise.resolve(null),
+    (async () => {
+      if (!wahaKey() || !isLocalWahaUrl()) return null;
+      try { const response = await wahaCall("/api/version"); if (!response.ok) return null; const data = await response.json() as { version?: string }; return data.version || null; } catch { return null; }
+    })()
+  ]);
+  const item = (id: string, name: string, installed: string | null, latest: { version: string; url: string } | null, command: string) =>
+    ({ id, name, installed, latest: latest?.version || null, url: latest?.url || null, status: updateStatus(installed, latest?.version || null), command });
+  return {
+    checkedAt: new Date().toISOString(),
+    items: [
+      item("scraper", "Google Maps scraper", scraperInstalled, scraperLatest, inDocker ? "docker compose build --pull && docker compose up -d" : runner.mode === "docker" ? "docker pull gosom/google-maps-scraper" : "npm run build:scraper (after updating services/gmaps-scraper)"),
+      item("waha", "WhatsApp service (WAHA)", wahaInstalled, wahaLatest, inDocker ? "docker compose pull && docker compose up -d" : "docker pull devlikeapro/waha, then stop and start the service")
+    ]
+  };
+});
 
 app.get("/api/whatsapp/service", async () => {
   const state = await serviceState();
