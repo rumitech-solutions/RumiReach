@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { db } from "./db";
 import { findFieldConflicts } from "./provenance";
 import { z } from "zod";
+import { serviceState, startService, stopService, wahaKey } from "./waha";
 import { findDuplicates, type DupeRow } from "./dupes";
 import { parseCsv } from "./csv";
 import { ensureGeoData, geoStatus, getCountry, listCities, listCountries, listStates } from "./geo";
@@ -17,7 +18,6 @@ const HOST = "127.0.0.1";
 const PORT = Number(process.env.PORT || 4317);
 const WAHA_BASE_URL = (process.env.WAHA_BASE_URL || "http://127.0.0.1:3000").replace(/\/+$/, "");
 const WAHA_SESSION = process.env.WAHA_SESSION || "default";
-const WAHA_API_KEY = process.env.WAHA_API_KEY || "";
 function normalizeWhatsAppNumber(value: string) { let digits = value.replace(/\D/g, ""); if (digits.startsWith("00")) digits = digits.slice(2); if (digits.startsWith("0")) digits = "92" + digits.slice(1); else if (digits.length === 10 && digits.startsWith("3")) digits = "92" + digits; return digits.length >= 8 && digits.length <= 15 ? digits : ""; }
 function isLocalWahaUrl() { try { const url = new URL(WAHA_BASE_URL); return ["127.0.0.1","localhost","[::1]"].includes(url.hostname) && ["http:","https:"].includes(url.protocol); } catch { return false; } }
 
@@ -296,9 +296,54 @@ app.delete("/api/candidates/:id", async (request, reply) => {
   return db.prepare("DELETE FROM candidates WHERE id=? AND source_id=?").run(id, IMPORT_SOURCE).changes ? { ok: true } : reply.code(404).send({ error: "Business not found." });
 });
 
+async function wahaCall(path: string, init: RequestInit = {}) {
+  return fetch(WAHA_BASE_URL + path, { ...init, headers: { "X-Api-Key": wahaKey(), "Content-Type": "application/json", Accept: "application/json" }, signal: AbortSignal.timeout(8000) });
+}
+async function sessionStatus(): Promise<string> {
+  try {
+    const response = await wahaCall("/api/sessions?all=true");
+    if (!response.ok) return "UNAUTHORIZED";
+    const sessions = await response.json() as Array<{ name?: string; status?: string }>;
+    return sessions.find(item => item.name === WAHA_SESSION)?.status || "NOT_FOUND";
+  } catch { return "UNREACHABLE"; }
+}
+
+app.get("/api/whatsapp/service", async () => {
+  const state = await serviceState();
+  const session = state.container === "running" && wahaKey() && isLocalWahaUrl() ? await sessionStatus() : "";
+  return { ...state, session, localOnly: isLocalWahaUrl() };
+});
+app.post("/api/whatsapp/service/start", async (_request, reply) => {
+  if (!isLocalWahaUrl()) return reply.code(400).send({ error: "WAHA_BASE_URL points outside this computer; start that WAHA yourself." });
+  return reply.code(202).send({ started: startService() });
+});
+app.post("/api/whatsapp/service/stop", async (_request, reply) => {
+  try { await stopService(); return { ok: true }; } catch { return reply.code(500).send({ error: "Could not stop the WhatsApp service." }); }
+});
+// Create/start the WhatsApp session so a QR code is produced.
+app.post("/api/whatsapp/session/start", async (_request, reply) => {
+  if (!wahaKey() || !isLocalWahaUrl()) return reply.code(503).send({ error: "Start the WhatsApp service first." });
+  try {
+    const status = await sessionStatus();
+    if (status === "NOT_FOUND") await wahaCall("/api/sessions", { method: "POST", body: JSON.stringify({ name: WAHA_SESSION, start: true }) });
+    else if (status === "STOPPED" || status === "FAILED") await wahaCall("/api/sessions/" + encodeURIComponent(WAHA_SESSION) + "/start", { method: "POST" });
+    return { status: await sessionStatus() };
+  } catch { return reply.code(502).send({ error: "Cannot reach WAHA yet. Wait a few seconds and try again." }); }
+});
+app.get("/api/whatsapp/qr", async (_request, reply) => {
+  if (!wahaKey() || !isLocalWahaUrl()) return reply.code(503).send({ error: "Start the WhatsApp service first." });
+  try {
+    const response = await wahaCall("/api/" + encodeURIComponent(WAHA_SESSION) + "/auth/qr?format=image");
+    if (!response.ok) return reply.code(409).send({ error: "No QR code available right now." });
+    const data = await response.json() as { mimetype?: string; data?: string };
+    if (!data.data) return reply.code(409).send({ error: "No QR code available right now." });
+    return { image: "data:" + (data.mimetype || "image/png") + ";base64," + data.data };
+  } catch { return reply.code(502).send({ error: "Cannot reach WAHA." }); }
+});
+
 app.get("/api/whatsapp/status", async () => {
-  if (!WAHA_API_KEY || !isLocalWahaUrl()) return { configured: false, connected: false, message: "Set localhost WAHA_BASE_URL and WAHA_API_KEY in the API environment." };
-  try { const response = await fetch(WAHA_BASE_URL + "/api/sessions", { headers: { "X-Api-Key": WAHA_API_KEY }, signal: AbortSignal.timeout(5000) }); if (!response.ok) return { configured: true, connected: false, message: "WAHA rejected the API request." }; const sessions = await response.json() as Array<{ name?: string; status?: string }>; const session = sessions.find(item => item.name === WAHA_SESSION); return { configured: true, connected: session?.status === "WORKING", session: WAHA_SESSION, sessionStatus: session?.status || "NOT_FOUND", message: session?.status === "WORKING" ? "WhatsApp session is connected." : "Pair/start the WAHA session using its QR dashboard." }; } catch { return { configured: true, connected: false, message: "Cannot reach WAHA. Start the service and try again." }; }
+  if (!wahaKey() || !isLocalWahaUrl()) return { configured: false, connected: false, message: "Start the WhatsApp service from the integration settings." };
+  try { const response = await fetch(WAHA_BASE_URL + "/api/sessions", { headers: { "X-Api-Key": wahaKey() }, signal: AbortSignal.timeout(5000) }); if (!response.ok) return { configured: true, connected: false, message: "WAHA rejected the API request." }; const sessions = await response.json() as Array<{ name?: string; status?: string }>; const session = sessions.find(item => item.name === WAHA_SESSION); return { configured: true, connected: session?.status === "WORKING", session: WAHA_SESSION, sessionStatus: session?.status || "NOT_FOUND", message: session?.status === "WORKING" ? "WhatsApp session is connected." : "Pair/start the WAHA session using its QR dashboard." }; } catch { return { configured: true, connected: false, message: "Cannot reach WAHA. Start the service and try again." }; }
 });
 app.patch("/api/candidates/:id/whatsapp-consent", async (request, reply) => {
   const { id } = request.params as { id: string }; const body = request.body as { status?: string; evidence?: string; method?: string };
@@ -330,7 +375,7 @@ app.post("/api/candidates/:id/whatsapp-send", async (request, reply) => {
     const filename = (body.image.filename || "rumireach-outreach-image").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100) || "rumireach-outreach-image";
     imagePayload = { mimetype, filename, data };
   }
-  if (!WAHA_API_KEY || !isLocalWahaUrl()) return reply.code(503).send({ error: "WAHA is not configured. Set localhost WAHA_BASE_URL and WAHA_API_KEY." });
+  if (!wahaKey() || !isLocalWahaUrl()) return reply.code(503).send({ error: "WAHA is not configured. Start the WhatsApp service in the integration settings." });
   const candidate = db.prepare("SELECT id,phone_raw FROM candidates WHERE id=? AND source_id=?").get(id, IMPORT_SOURCE) as { id: string; phone_raw: string | null } | undefined; if (!candidate) return reply.code(404).send({ error: "Candidate not found." });
   const phone = normalizeWhatsAppNumber(candidate.phone_raw || ""); const consent = db.prepare("SELECT phone_e164,status,consent_evidence FROM whatsapp_consents WHERE candidate_id=?").get(id) as { phone_e164: string; status: string; consent_evidence: string | null } | undefined;
   if (!consent || consent.status !== "opted_in" || !consent.consent_evidence) return reply.code(403).send({ error: "Explicit opt-in evidence is required. Sending blocked." }); if (!phone || phone !== consent.phone_e164) return reply.code(409).send({ error: "Phone changed since consent. Reconfirm consent for this number." });
@@ -342,7 +387,7 @@ app.post("/api/candidates/:id/whatsapp-send", async (request, reply) => {
     const payload = imagePayload
       ? { session: WAHA_SESSION, chatId: phone + "@c.us", file: imagePayload, caption: message }
       : { session: WAHA_SESSION, chatId: phone + "@c.us", text: message };
-    const response = await fetch(WAHA_BASE_URL + endpoint, { method: "POST", headers: { "X-Api-Key": WAHA_API_KEY, "Content-Type": "application/json", "Accept": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(30000) });
+    const response = await fetch(WAHA_BASE_URL + endpoint, { method: "POST", headers: { "X-Api-Key": wahaKey(), "Content-Type": "application/json", "Accept": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(30000) });
     const result = await response.json().catch(() => ({})) as { id?: string; message?: string; error?: string };
     if (!response.ok) { db.prepare("INSERT INTO whatsapp_send_log (id,candidate_id,phone_e164,status,error_message,sent_at) VALUES (?,?,?,?,?,?)").run(randomUUID(), id, phone, "failed", String(result.message || result.error || "WAHA request failed").slice(0,500), now.toISOString()); return reply.code(502).send({ error: "WAHA could not send the message. Check the WAHA session." }); }
     db.prepare("INSERT INTO whatsapp_send_log (id,candidate_id,phone_e164,provider_message_id,status,sent_at) VALUES (?,?,?,?,?,?)").run(randomUUID(), id, phone, result.id || null, "sent", now.toISOString()); return { ok: true, status: "sent", providerMessageId: result.id || null, sentAt: now.toISOString() };

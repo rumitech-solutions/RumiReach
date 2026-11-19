@@ -37,7 +37,15 @@ The country/state/city list (dr5hn/countries-states-cities-database, ODbL) is do
 
 Automated collection from Google Maps may violate Google's terms and local privacy/anti-spam law; the panel requires you to confirm you are authorized, and responsibility for use of the data stays with you.
 
-## Optional WAHA setup
+## Optional WhatsApp (WAHA) — one click
+
+With Docker Desktop installed, open the WhatsApp draft panel → **Optional integration settings** → enable WAHA → **Start WhatsApp service**. RumiReach runs the official `devlikeapro/waha` image (first run downloads it), bound to `127.0.0.1` only with a generated private API key stored in the local data folder, then shows the pairing QR code right in the dashboard. No separate repo or `.env` is needed. Optional env vars: `RUMIREACH_WAHA_IMAGE`, `RUMIREACH_WAHA_ENGINE` (e.g. `NOWEB`).
+
+## Moving to another laptop
+
+Install Node.js 24 and Docker Desktop, clone this repo, run `npm install` and `npm run dev`. The Google Maps scraper (Docker image) and the WhatsApp service (Docker image) are pulled automatically on first use. Your data lives in the local data folder (`%LOCALAPPDATA%\RumiReach\data` on Windows), so copy that folder to keep your collections.
+
+## Advanced WAHA setup (manual)
 
 Configure the API process environment (never the browser) with:
 

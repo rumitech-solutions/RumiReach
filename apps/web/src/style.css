@@ -72,3 +72,5 @@
 .merge-select{border:1px solid #ffffff1c;border-radius:7px;background:#1a2735;color:#c2d2dd;padding:9px 8px;font:600 10px 'DM Sans';max-width:150px;cursor:pointer}
 .dupe-chip{margin-right:12px}.recent-list{display:grid;gap:8px}
 .recent-item{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;border:1px solid #ffffff14;border-radius:9px;background:#0f1a26;color:#dbe7ee;font:12px 'DM Sans';cursor:pointer;text-align:left}.recent-item span{color:#79ddc7;font-size:10px;white-space:nowrap}.recent-item:hover{border-color:#79ddc760}
+.wa-service{display:grid;gap:10px;margin:12px 0;padding:14px;border:1px solid #79ddc730;border-radius:10px;background:#0f1d22;font:11px 'DM Sans';color:#c2d2dd}
+.wa-service small{font:400 9px/1.5 'DM Sans';color:#718398}.wa-actions{display:flex;gap:8px;flex-wrap:wrap}.wa-qr{width:220px;height:220px;background:#fff;padding:8px;border-radius:10px;justify-self:start}
