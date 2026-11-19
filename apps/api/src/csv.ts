@@ -29,7 +29,7 @@ export function parseCsv(input: string): CsvRow[] {
   if (!rows.length) throw new Error("CSV is empty.");
   const headers = rows[0].map(value => value.trim().replace(/^\uFEFF/, "").toLowerCase());
   if (new Set(headers).size !== headers.length) throw new Error("CSV contains duplicate column names.");
-  if (!headers.includes("name") && !headers.includes("business_name")) throw new Error('CSV must include a "name" or "business_name" column.');
+  if (!["name", "business_name", "title"].some(h => headers.includes(h))) throw new Error('CSV must include a "name", "business_name" or "title" column.');
   return rows.slice(1).map(values => Object.fromEntries(headers.map((header,index) => [header,(values[index] ?? "").trim()])));
 }
 

@@ -32,7 +32,7 @@ RumiReach is now a local-first CSV business-lead workspace. The dashboard no lon
 ## Not part of the active product
 
 - Live business discovery from OSM, Overpass, Nominatim, Overture or Google Places.
-- Automated Google Maps scraping or a scraper runner.
+- Hosted/cloud scraping. (A local Google Maps scraper runner with country/state/city selection is now available in the **Find leads** panel; see README.)
 - Website crawling/contact enrichment.
 - Unsolicited/bulk WhatsApp messaging, sending without opt-in evidence, and unattended campaign blasts. One-contact-at-a-time WAHA sending is implemented behind consent and operator confirmation.
 - Hosted multi-tenant SaaS.

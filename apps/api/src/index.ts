@@ -3,51 +3,22 @@ import { Readable } from "node:stream";
 import { randomUUID } from "node:crypto";
 import { db } from "./db";
 import { findFieldConflicts } from "./provenance";
-import { normalizeSourceUrl, normalizeWebsite, parseCsv } from "./csv";
+import { z } from "zod";
+import { parseCsv } from "./csv";
+import { ensureGeoData, geoStatus, getCountry, listCities, listCountries, listStates } from "./geo";
+import { MAX_CITIES_DEFAULT, MAX_CITIES_LIMIT, activeRunId, cancelScrape, listScrapes, resolveRunner, startScrape } from "./scraper";
+import { IMPORT_SOURCE, createImportSession, importSessions, insertRows, type ImportRow, type ImportSession } from "./importer";
 import { ensureMatchingSchema } from "./matching";
 
 ensureMatchingSchema();
 const app = Fastify({ logger: true, bodyLimit: Number.MAX_SAFE_INTEGER });
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.PORT || 4317);
-const IMPORT_SOURCE = "user_csv_import";
 const WAHA_BASE_URL = (process.env.WAHA_BASE_URL || "http://127.0.0.1:3000").replace(/\/+$/, "");
 const WAHA_SESSION = process.env.WAHA_SESSION || "default";
 const WAHA_API_KEY = process.env.WAHA_API_KEY || "";
 function normalizeWhatsAppNumber(value: string) { let digits = value.replace(/\D/g, ""); if (digits.startsWith("00")) digits = digits.slice(2); if (digits.startsWith("0")) digits = "92" + digits.slice(1); else if (digits.length === 10 && digits.startsWith("3")) digits = "92" + digits; return digits.length >= 8 && digits.length <= 15 ? digits : ""; }
 function isLocalWahaUrl() { try { const url = new URL(WAHA_BASE_URL); return ["127.0.0.1","localhost","[::1]"].includes(url.hostname) && ["http:","https:"].includes(url.protocol); } catch { return false; } }
-
-type ImportRow = Record<string, string>;
-type ImportSession = { batchId: string; jobId: string; filename: string; nextRow: number; imported: number; skipped: number; invalidWebsite: number; status: "running" | "completed" | "failed" };
-const importSessions = new Map<string, ImportSession>();
-
-function insertRows(session: ImportSession, rows: ImportRow[], startRow: number) {
-  const insertCandidate = db.prepare("INSERT INTO candidates (id,job_id,source_id,source_object_type,source_object_id,name,category,address,phone_raw,website_url,public_email,source_url,observed_at,raw_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
-  const insertObservation = db.prepare("INSERT OR IGNORE INTO field_observations (id,candidate_id,source_id,field_name,field_value,source_url,observed_at,source_timestamp,verification_status,confidence) VALUES (?,?,?,?,?,?,?,?,?,NULL)");
-  const run = db.transaction(() => {
-    rows.forEach((row, offset) => {
-      const rowNumber = startRow + offset;
-      const name = (row.name || row.business_name || row.title || row.restaurant_name || row.business || "").trim();
-      if (!name) { session.skipped++; return; }
-      const category = (row.category || row.business_category || "").trim() || "unknown";
-      const address = (row.address || row.full_address || row.complete_address || "").trim();
-      const phone = (row.phone || row.phone_number || row.phone_raw || "").trim();
-      const websiteRaw = (row.website || row.website_url || "").trim();
-      const website = normalizeWebsite(websiteRaw);
-      const email = (row.email || row.public_email || "").trim();
-      if (websiteRaw && !website) session.invalidWebsite++;
-      const sourceUrl = normalizeSourceUrl(row.source_url || row.link || row.maps_url || row.url || "", "csv-import://" + encodeURIComponent(session.filename) + "#row=" + rowNumber);
-      const candidateId = randomUUID();
-      const observedAt = new Date().toISOString();
-      const values: Record<string, string | null> = { name, category: (row.category || row.business_category || "").trim() || null, address: address || null, phone: phone || null, website, email: email || null };
-      insertCandidate.run(candidateId, session.jobId, IMPORT_SOURCE, "csv_row", session.batchId + ":" + rowNumber, name, category, address || null, phone || null, website, email || null, sourceUrl, observedAt, JSON.stringify({ filename: session.filename, rowNumber, values: row }));
-      for (const [field, value] of Object.entries(values)) if (value) insertObservation.run(randomUUID(), candidateId, IMPORT_SOURCE, field, value, sourceUrl, observedAt, null, "unverified");
-      session.imported++;
-    });
-  });
-  run();
-  session.nextRow = startRow + rows.length;
-}
 
 app.get("/api/health", async () => ({ ok: true, app: "RumiReach", version: "0.3.0" }));
 
@@ -164,6 +135,80 @@ app.post("/api/import/csv", async (request, reply) => {
     return reply.code(500).send({ error: "CSV import failed. Previously committed batches may remain saved." });
   }
 });
+
+// ---- Find leads: country/state/city pickers + local Google Maps scraper runs ----
+function geoFailure(reply: { code: (n: number) => { send: (b: unknown) => unknown } }, error: unknown) {
+  return reply.code(503).send({ error: (error instanceof Error ? error.message : "Location data is unavailable.") + " Check your internet connection and try again." });
+}
+
+app.get("/api/scrape/status", async () => ({ runner: resolveRunner(), geo: geoStatus(), maxCities: MAX_CITIES_LIMIT, defaultCities: MAX_CITIES_DEFAULT }));
+
+app.get("/api/geo/countries", async (_request, reply) => {
+  try { return { countries: await listCountries() }; } catch (error) { return geoFailure(reply, error); }
+});
+app.get("/api/geo/countries/:country/states", async (request, reply) => {
+  const { country } = request.params as { country: string };
+  try {
+    const states = await listStates(country.toUpperCase());
+    return states ? { states } : reply.code(404).send({ error: "Unknown country." });
+  } catch (error) { return geoFailure(reply, error); }
+});
+app.get("/api/geo/countries/:country/states/:state/cities", async (request, reply) => {
+  const { country, state } = request.params as { country: string; state: string };
+  try {
+    const cities = await listCities(country.toUpperCase(), state);
+    return cities ? { cities } : reply.code(404).send({ error: "Unknown state." });
+  } catch (error) { return geoFailure(reply, error); }
+});
+
+const ScrapeBody = z.object({
+  keywords: z.array(z.string().trim().min(2).max(80)).min(1).max(10),
+  country: z.string().regex(/^[A-Za-z]{2}$/),
+  state: z.string().max(20).optional(),
+  city: z.string().trim().max(120).optional(),
+  maxCities: z.number().int().min(1).max(MAX_CITIES_LIMIT).default(MAX_CITIES_DEFAULT),
+  depth: z.number().int().min(1).max(20).default(5),
+  email: z.boolean().default(false),
+  lang: z.string().regex(/^[a-z]{2}(-[A-Za-z]{2,4})?$/).default("en"),
+  authorized: z.literal(true, { error: "Confirm that you are authorized to collect and use this data." })
+});
+
+app.post("/api/scrape/runs", async (request, reply) => {
+  const parsed = ScrapeBody.safeParse(request.body);
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues.map(issue => issue.message).join(" ") });
+  const body = parsed.data;
+  if (activeRunId()) return reply.code(409).send({ error: "Another scrape is already running. Wait for it to finish or cancel it." });
+  let country;
+  try { country = await getCountry(body.country.toUpperCase()); } catch (error) { return geoFailure(reply, error); }
+  if (!country) return reply.code(400).send({ error: "Unknown country." });
+  let state: { id: string; name: string; cities: string[] } | undefined;
+  if (body.state) {
+    state = country.states.find(item => item.id === body.state);
+    if (!state) return reply.code(400).send({ error: "Unknown state for the selected country." });
+  }
+  let cities: string[] = [];
+  if (body.city) {
+    if (state && !state.cities.includes(body.city)) return reply.code(400).send({ error: "That city is not in the selected state." });
+    cities = [body.city];
+  } else if (state) cities = state.cities.slice(0, body.maxCities);
+  try {
+    const run = await startScrape(
+      { keywords: body.keywords, countryName: country.name, stateName: state?.name, cities, depth: body.depth, email: body.email, lang: body.lang },
+      { country: country.name, state: state?.name, city: body.city }
+    );
+    return reply.code(202).send({ ...run, cities: cities.length });
+  } catch (error) {
+    return reply.code(400).send({ error: error instanceof Error ? error.message : "Could not start the scrape." });
+  }
+});
+
+app.get("/api/scrape/runs", async () => ({ runs: listScrapes() }));
+
+app.post("/api/scrape/runs/:id/cancel", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  return cancelScrape(id) ? { ok: true } : reply.code(404).send({ error: "That scrape is not running." });
+});
+
 
 app.get("/api/whatsapp/status", async () => {
   if (!WAHA_API_KEY || !isLocalWahaUrl()) return { configured: false, connected: false, message: "Set localhost WAHA_BASE_URL and WAHA_API_KEY in the API environment." };

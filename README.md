@@ -18,6 +18,21 @@ RumiReach is a local-first CSV business-lead workspace by RumiTech Solutions. Im
 
 The dashboard is CSV-first. Large files are read incrementally in the browser and committed in batches, so the full CSV does not need to be held in memory at once. If a batch fails, previously committed batches remain saved and should be checked before retrying. WAHA is disabled by default and can be enabled from the WhatsApp draft panel settings. When disabled, the WhatsApp button shares the editable draft and selected image through the browser's file-sharing sheet where supported; browsers without file sharing open the text draft and download the image for manual attachment. When enabled and configured locally, a separate WAHA send action appears only for contacts with recorded explicit opt-in evidence and sends the selected image as a captioned image message; each send requires per-message operator confirmation. WAHA is an unofficial WhatsApp Web integration and may carry account-restriction risk; it is not an official Meta API. It does not perform live business discovery or connect to OSM, Overpass, Nominatim, Google Places, or other discovery providers. The repository retains some legacy schema/modules from the earlier prototype, but the current API and dashboard do not expose or run those discovery flows.
 
+## Find leads automatically (Google Maps scraper)
+
+The dashboard's **Find leads** panel runs the bundled scraper (`services/gmaps-scraper`, vendored from gosom/google-maps-scraper) on your own computer:
+
+1. Type one or more search terms (e.g. `dentist`), choose **country → state → city** (leave city empty to cover the first N cities of the state), set depth, and optionally email lookup.
+2. RumiReach builds queries such as `dentist in Lahore, Punjab, Pakistan`, runs the scraper, and imports the CSV into your directory as unverified records. Businesses already saved (same Maps link) are skipped.
+
+Setup (one of):
+- **Docker Desktop** (easiest on Windows): nothing to build; the `gosom/google-maps-scraper` image is pulled on first run.
+- **Local binary**: install Go, then `npm run build:scraper` (also installs the Playwright browser). Override the path with `RUMIREACH_SCRAPER_BIN`.
+
+The country/state/city list (dr5hn/countries-states-cities-database, ODbL) is downloaded once on first use and cached in the local data folder. Optional env vars: `RUMIREACH_SCRAPE_CONCURRENCY` (default 2), `RUMIREACH_SCRAPE_MAX_MINUTES` (default 120), `RUMIREACH_SCRAPER_IMAGE`.
+
+Automated collection from Google Maps may violate Google's terms and local privacy/anti-spam law; the panel requires you to confirm you are authorized, and responsibility for use of the data stays with you.
+
 ## Optional WAHA setup
 
 Configure the API process environment (never the browser) with:

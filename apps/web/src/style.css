@@ -35,3 +35,19 @@
 .image-attachment-actions{display:flex;align-items:center;gap:7px;flex:none}
 .image-remove{color:#e2a6a6}
 @media(max-width:600px){.image-attachment{align-items:flex-start;flex-direction:column}.image-attachment-actions{width:100%}.image-attachment-actions button{flex:1}}
+
+.find-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:6px 0 14px}.find-wide{grid-column:1/-1}
+.find-field{display:flex;flex-direction:column;gap:6px;font:600 10px 'DM Sans';color:#a9bdca}
+.find-field select,.find-field input,.find-field textarea{width:100%;padding:10px 11px;border:1px solid #ffffff1b;border-radius:8px;background:#0b151b;color:#e6f0ed;font:12px 'DM Sans',sans-serif;outline:none}
+.find-field textarea{resize:vertical;line-height:1.6}.find-field select:disabled,.find-field input:disabled{opacity:.5}
+.find-field small,.find-check small{font:400 9px/1.5 'DM Sans';color:#718398;display:block}
+.find-check{display:flex;gap:10px;align-items:flex-start;font:10px 'DM Sans';color:#c2d2dd;cursor:pointer}.find-check input{margin-top:3px}
+.find-runs{margin-top:18px;display:grid;gap:10px}.find-runs h3{margin:0;font:700 11px 'DM Sans';color:#c2d2dd}
+.find-run{border:1px solid #ffffff14;border-radius:9px;background:#0f1a26;padding:11px 13px;display:grid;gap:6px}
+.find-run-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font:11px 'DM Sans';color:#dbe7ee}.find-run-head span:not(.find-badge){color:#8093a5;font-size:10px}
+.find-badge{margin-left:auto;font:700 8px 'DM Sans';letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:999px;background:#1a2735;color:#a9bdca}
+.find-running .find-badge,.find-importing .find-badge{background:#17312f;color:#9de3d3}.find-completed .find-badge{background:#1d3a2c;color:#8fe0a8}.find-failed .find-badge{background:#3a2029;color:#ffc1c6}
+.find-run small{font:400 9px 'DM Sans';color:#8093a5}.find-error{color:#ffc1c6!important}
+.find-log{margin:0;padding:8px 10px;border-radius:7px;background:#0b151b;color:#9eafbd;font:9px/1.5 ui-monospace,monospace;white-space:pre-wrap;word-break:break-word;max-height:110px;overflow:auto}
+.find-run .secondary-button{justify-self:start}
+@media(max-width:720px){.find-grid{grid-template-columns:1fr}}
