@@ -20,7 +20,7 @@ The dashboard is CSV-first. Large files are read incrementally in the browser an
 
 ## Navigation and collections
 
-The sidebar has separate pages: **Overview**, **Find leads**, **Import CSV**, **Collections** and **All businesses**. Every search run and CSV import is saved as a named *collection* (give it a name when you start, or one is generated). From **Collections** you can open a list (filters All businesses to it), export just that list, rename it, or delete it with its businesses. Finished searches have **Run again**; businesses can also be deleted individually.
+The sidebar has separate pages: **Overview**, **Find leads**, **Import CSV**, **Collections** and **All businesses**. Every search run and CSV import is saved as a named *collection* (give it a name when you start, or one is generated). From **Collections** you can open a list (filters All businesses to it), export just that list, rename it, or delete it with its businesses. In All businesses, tick rows (or the header box) to **Accept / Reject / Needs review / Delete** many at once, and use the **Has phone / website / email** chips to narrow a list; exports are named after the collection. Finished searches have **Run again**; businesses can also be deleted individually.
 
 ## Find leads automatically (Google Maps scraper)
 

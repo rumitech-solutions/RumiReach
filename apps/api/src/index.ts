@@ -23,7 +23,7 @@ function isLocalWahaUrl() { try { const url = new URL(WAHA_BASE_URL); return ["1
 app.get("/api/health", async () => ({ ok: true, app: "RumiReach", version: "0.3.0" }));
 
 app.get("/api/candidates", async (request) => {
-  const q = request.query as { page?: string; pageSize?: string; search?: string; category?: string; status?: string; sort?: string; collection?: string };
+  const q = request.query as { page?: string; pageSize?: string; search?: string; category?: string; status?: string; sort?: string; collection?: string; has?: string };
   const page = Math.max(1, Math.floor(Number(q.page) || 1));
   const pageSize = Math.min(100, Math.max(10, Math.floor(Number(q.pageSize) || 25)));
   const search = (q.search || "").trim().slice(0, 200);
@@ -38,6 +38,8 @@ app.get("/api/candidates", async (request) => {
   }
   if (category) { where.push("category = ?"); params.push(category); }
   if (q.collection) { where.push("job_id = ?"); params.push(q.collection.slice(0, 64)); }
+  const hasColumn = ({ phone: "phone_raw", website: "website_url", email: "public_email" } as Record<string, string>)[q.has || ""];
+  if (hasColumn) where.push("COALESCE(" + hasColumn + ", '') != ''");
   if (status) { where.push("review_status = ?"); params.push(status); }
   const clause = where.join(" AND ");
   const total = (db.prepare("SELECT COUNT(*) AS count FROM candidates WHERE " + clause).get(...params) as { count: number }).count;
@@ -49,7 +51,7 @@ app.get("/api/candidates", async (request) => {
 });
 
 app.get("/api/candidates/export", async (request, reply) => {
-  const q = request.query as { search?: string; category?: string; status?: string; sort?: string; collection?: string };
+  const q = request.query as { search?: string; category?: string; status?: string; sort?: string; collection?: string; has?: string };
   const search = (q.search || "").trim().slice(0, 200);
   const category = (q.category || "").trim().slice(0, 100);
   const status = ["pending", "accepted", "rejected", "needs_review"].includes(q.status || "") ? q.status! : "";
@@ -62,6 +64,8 @@ app.get("/api/candidates/export", async (request, reply) => {
   }
   if (category) { where.push("category = ?"); params.push(category); }
   if (q.collection) { where.push("job_id = ?"); params.push(q.collection.slice(0, 64)); }
+  const hasColumn = ({ phone: "phone_raw", website: "website_url", email: "public_email" } as Record<string, string>)[q.has || ""];
+  if (hasColumn) where.push("COALESCE(" + hasColumn + ", '') != ''");
   if (status) { where.push("review_status = ?"); params.push(status); }
   const order = q.sort === "name" ? "name COLLATE NOCASE ASC" : q.sort === "category" ? "category COLLATE NOCASE ASC" : "observed_at DESC";
   const statement = db.prepare("SELECT name,category,address,phone_raw,website_url,public_email,source_url,review_status FROM candidates WHERE " + where.join(" AND ") + " ORDER BY " + order);
@@ -75,7 +79,9 @@ app.get("/api/candidates/export", async (request, reply) => {
       yield [row.name,row.category,row.address,row.phone_raw,row.website_url,row.public_email,row.source_url,row.review_status].map(cell).join(",") + "\r\n";
     }
   }
-  return reply.type("text/csv; charset=utf-8").header("Content-Disposition", 'attachment; filename="rumireach-leads.csv"').send(Readable.from(csvLines()));
+  const collectionName = q.collection ? (db.prepare("SELECT COALESCE(NULLIF(name,''), locality) AS n FROM search_jobs WHERE id=?").get(q.collection.slice(0, 64)) as { n: string } | undefined)?.n : "";
+  const fileBase = (collectionName || "rumireach-leads").replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "rumireach-leads";
+  return reply.type("text/csv; charset=utf-8").header("Content-Disposition", 'attachment; filename="' + fileBase + '.csv"').send(Readable.from(csvLines()));
 });
 
 app.post("/api/import/csv/start", async (request, reply) => {
@@ -244,6 +250,19 @@ app.delete("/api/collections/:id", async (request, reply) => {
   })();
   return deleted < 0 ? reply.code(404).send({ error: "Collection not found." }) : { ok: true, removed: deleted };
 });
+app.post("/api/candidates/bulk", async (request, reply) => {
+  const body = request.body as { ids?: unknown; action?: string };
+  const ids = Array.isArray(body?.ids) ? [...new Set(body.ids.filter((id): id is string => typeof id === "string" && id.length <= 64))] : [];
+  if (!ids.length || ids.length > 500) return reply.code(400).send({ error: "Select between 1 and 500 businesses." });
+  const action = body?.action || "";
+  if (!["accepted", "rejected", "needs_review", "pending", "delete"].includes(action)) return reply.code(400).send({ error: "Unknown action." });
+  const marks = ids.map(() => "?").join(",");
+  const changed = db.transaction(() => action === "delete"
+    ? db.prepare("DELETE FROM candidates WHERE source_id=? AND id IN (" + marks + ")").run(IMPORT_SOURCE, ...ids).changes
+    : db.prepare("UPDATE candidates SET review_status=? WHERE source_id=? AND id IN (" + marks + ")").run(action, IMPORT_SOURCE, ...ids).changes)();
+  return { ok: true, changed };
+});
+
 app.delete("/api/candidates/:id", async (request, reply) => {
   const { id } = request.params as { id: string };
   return db.prepare("DELETE FROM candidates WHERE id=? AND source_id=?").run(id, IMPORT_SOURCE).changes ? { ok: true } : reply.code(404).send({ error: "Business not found." });
