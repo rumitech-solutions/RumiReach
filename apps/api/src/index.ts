@@ -240,6 +240,21 @@ app.patch("/api/collections/:id", async (request, reply) => {
   db.prepare("UPDATE scrape_runs SET name=? WHERE import_job_id=?").run(name, id);
   return { ok: true };
 });
+app.post("/api/collections/:id/merge", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const into = String((request.body as { into?: string })?.into || "");
+  if (!into || into === id) return reply.code(400).send({ error: "Choose a different collection to merge into." });
+  const exists = db.prepare("SELECT id FROM search_jobs WHERE id=? AND source_id=?");
+  if (!exists.get(id, IMPORT_SOURCE) || !exists.get(into, IMPORT_SOURCE)) return reply.code(404).send({ error: "Collection not found." });
+  const moved = db.transaction(() => {
+    const result = db.prepare("UPDATE candidates SET job_id=? WHERE job_id=?").run(into, id);
+    db.prepare("UPDATE scrape_runs SET import_job_id=? WHERE import_job_id=?").run(into, id);
+    db.prepare("DELETE FROM search_jobs WHERE id=? AND source_id=?").run(id, IMPORT_SOURCE);
+    db.prepare("UPDATE search_jobs SET candidate_count=(SELECT COUNT(*) FROM candidates WHERE job_id=?) WHERE id=?").run(into, into);
+    return result.changes;
+  })();
+  return { ok: true, moved };
+});
 app.delete("/api/collections/:id", async (request, reply) => {
   const { id } = request.params as { id: string };
   const deleted = db.transaction(() => {

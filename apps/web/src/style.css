@@ -69,3 +69,4 @@
 .chip{border:1px solid #ffffff1c;border-radius:999px;background:#131f2c;color:#a9bdca;padding:6px 12px;font:600 10px 'DM Sans';cursor:pointer}.chip.on{background:#17312f;border-color:#79ddc760;color:#9de3d3}
 .bulk-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px;padding:10px 12px;border:1px solid #79ddc740;border-radius:9px;background:#10231f;color:#bff0e2;font:11px 'DM Sans'}
 .check-col{width:34px}.check-col input{cursor:pointer}tr.row-selected td{background:#11231f}
+.merge-select{border:1px solid #ffffff1c;border-radius:7px;background:#1a2735;color:#c2d2dd;padding:9px 8px;font:600 10px 'DM Sans';max-width:150px;cursor:pointer}

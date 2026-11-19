@@ -36,6 +36,14 @@ export default function Collections({ active, onOpen, onChanged }: { active: boo
     catch (reason) { setError(reason instanceof Error ? reason.message : "Could not delete."); }
   }
 
+  async function merge(item: Collection, intoId: string) {
+    const target = items.find(other => other.id === intoId);
+    if (!target) return;
+    if (!window.confirm("Move all " + item.count + " businesses from “" + item.name + "” into “" + target.name + "”? The empty “" + item.name + "” list will be removed.")) return;
+    try { await call("/api/collections/" + item.id + "/merge", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ into: intoId }) }); await load(); onChanged(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "Could not merge."); }
+  }
+
   const shown = items.filter(item => item.name.toLowerCase().includes(filter.trim().toLowerCase()));
   return <section className="panel" id="collections">
     <div className="section-heading"><div><span className="section-kicker">SAVED SEARCHES & IMPORTS</span><h2>Collections</h2><p>Every search and CSV import is saved here under a name. Open one to see just its businesses, export it, rename it or delete it.</p></div><span className="format-badge">{items.length} SAVED</span></div>
@@ -54,6 +62,7 @@ export default function Collections({ active, onOpen, onChanged }: { active: boo
           <button className="primary-button" onClick={() => onOpen(item.id)}>Open</button>
           <a className="secondary-button" href={"/api/candidates/export?collection=" + item.id} download="rumireach-collection.csv">↓ Export</a>
           <button className="secondary-button" onClick={() => { setEditing(item.id); setDraft(item.name); }}>Rename</button>
+          {items.length > 1 && <select className="merge-select" aria-label={"Merge " + item.name + " into another collection"} value="" onChange={event => void merge(item, event.target.value)}><option value="">Merge into…</option>{items.filter(other => other.id !== item.id).map(other => <option key={other.id} value={other.id}>{other.name}</option>)}</select>}
           <button className="secondary-button danger" onClick={() => void remove(item)}>Delete</button>
         </div>
       </article>)}</div>}
