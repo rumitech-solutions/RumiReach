@@ -87,7 +87,7 @@ export function activeRunId() {
   return row?.id;
 }
 
-export async function startScrape(req: ScrapeRequest, meta: { country: string; state?: string; city?: string }) {
+export async function startScrape(req: ScrapeRequest, meta: { country: string; state?: string; city?: string; name?: string; request?: unknown }) {
   const queries = buildQueries(req);
   if (!queries.length) throw new Error("Add at least one keyword.");
   if (queries.length > MAX_QUERIES) throw new Error("Too many searches (" + queries.length + "). Reduce keywords or cities to " + MAX_QUERIES + " or fewer.");
@@ -95,6 +95,7 @@ export async function startScrape(req: ScrapeRequest, meta: { country: string; s
   if (!runner.available) throw new Error(runner.hint);
 
   const id = randomUUID();
+  const name = cleanQueryPart(meta.name || "").slice(0, 100) || [req.keywords.slice(0, 2).join(", "), [meta.city, meta.state, meta.country].filter(Boolean).join(", ")].join(" · ");
   const workDir = join(scrapesDir, id);
   await mkdir(workDir, { recursive: true });
   const queryFile = join(workDir, "queries.txt");
@@ -112,8 +113,8 @@ export async function startScrape(req: ScrapeRequest, meta: { country: string; s
     args = ["run", "--rm", "-v", "gmaps-playwright-cache:/opt", "-v", workDir + ":/work", DOCKER_IMAGE, "-input", "/work/queries.txt", "-results", "/work/results.csv", ...common];
   }
 
-  db.prepare("INSERT INTO scrape_runs (id,keywords,country,state,city,query_count,runner,status,created_at) VALUES (?,?,?,?,?,?,?,?,?)")
-    .run(id, req.keywords.join(", "), meta.country, meta.state || null, meta.city || null, queries.length, runner.mode, "running", new Date().toISOString());
+  db.prepare("INSERT INTO scrape_runs (id,keywords,country,state,city,query_count,runner,status,created_at,name,request_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+    .run(id, req.keywords.join(", "), meta.country, meta.state || null, meta.city || null, queries.length, runner.mode, "running", new Date().toISOString(), name, meta.request ? JSON.stringify(meta.request) : null);
 
   const run: LiveRun = { log: ["Starting " + queries.length + " search" + (queries.length === 1 ? "" : "es") + " via " + runner.mode + "…"], cancelled: false, startedAt: Date.now() };
   live.set(id, run);
@@ -122,12 +123,12 @@ export async function startScrape(req: ScrapeRequest, meta: { country: string; s
   child.stdout.on("data", data => pushLog(run, String(data)));
   child.stderr.on("data", data => pushLog(run, String(data)));
   run.timer = setTimeout(() => { pushLog(run, "Time limit reached; stopping."); run.cancelled = true; child.kill(); }, MAX_RUN_MINUTES * 60_000);
-  child.on("error", error => void finish(id, run, resultsFile, queries, meta, null, error.message));
-  child.on("close", code => void finish(id, run, resultsFile, queries, meta, code));
+  child.on("error", error => void finish(id, run, resultsFile, queries, { ...meta, name }, null, error.message));
+  child.on("close", code => void finish(id, run, resultsFile, queries, { ...meta, name }, code));
   return { id, queryCount: queries.length, queries: queries.slice(0, 5) };
 }
 
-async function finish(id: string, run: LiveRun, resultsFile: string, queries: string[], meta: { country: string; state?: string; city?: string }, code: number | null, spawnError?: string) {
+async function finish(id: string, run: LiveRun, resultsFile: string, queries: string[], meta: { country: string; state?: string; city?: string; name?: string }, code: number | null, spawnError?: string) {
   if (run.timer) clearTimeout(run.timer);
   const status = (db.prepare("SELECT status FROM scrape_runs WHERE id=?").get(id) as { status: string } | undefined)?.status;
   if (status !== "running") return; // 'error' then 'close' can both fire
@@ -150,10 +151,10 @@ async function finish(id: string, run: LiveRun, resultsFile: string, queries: st
   run.child = undefined;
 }
 
-async function importResults(runId: string, resultsFile: string, queries: string[], meta: { country: string; state?: string; city?: string }) {
+async function importResults(runId: string, resultsFile: string, queries: string[], meta: { country: string; state?: string; city?: string; name?: string }) {
   const rows = parseCsv(await readFile(resultsFile, "utf8")) as ImportRow[];
   const place = [meta.city, meta.state, meta.country].filter(Boolean).join(", ");
-  const session = createImportSession("gmaps-scrape-" + runId.slice(0, 8) + ".csv", { category: queries.slice(0, 3).join(" | ").slice(0, 200), city: place });
+  const session = createImportSession("gmaps-scrape-" + runId.slice(0, 8) + ".csv", { name: meta.name, category: queries.slice(0, 3).join(" | ").slice(0, 200), city: place });
   const exists = db.prepare("SELECT 1 FROM candidates WHERE source_id=? AND source_url=? LIMIT 1");
   const seen = new Set<string>();
   let duplicates = 0;
@@ -173,6 +174,8 @@ async function importResults(runId: string, resultsFile: string, queries: string
       db.prepare("UPDATE search_jobs SET candidate_count=? WHERE id=?").run(session.imported, session.jobId);
     }
     db.prepare("UPDATE search_jobs SET status='completed',candidate_count=?,finished_at=? WHERE id=?").run(session.imported, new Date().toISOString(), session.jobId);
+    // Nothing new (all duplicates): do not leave an empty collection behind.
+    if (!session.imported) { db.prepare("DELETE FROM search_jobs WHERE id=?").run(session.jobId); return { imported: 0, skipped: session.skipped, duplicates, jobId: null }; }
   } catch (error) {
     db.prepare("UPDATE search_jobs SET status='failed',error_message=?,finished_at=? WHERE id=?").run("Scrape import failed.", new Date().toISOString(), session.jobId);
     throw error;
@@ -194,7 +197,7 @@ export function cancelScrape(id: string) {
 }
 
 export function listScrapes(limit = 15) {
-  const rows = db.prepare("SELECT id,keywords,country,state,city,query_count AS queryCount,runner,status,imported,skipped,duplicates,error_message AS error,created_at AS createdAt,finished_at AS finishedAt FROM scrape_runs ORDER BY created_at DESC LIMIT ?").all(limit) as Array<Record<string, unknown> & { id: string }>;
+  const rows = db.prepare("SELECT id,name,keywords,country,state,city,query_count AS queryCount,runner,status,imported,skipped,duplicates,import_job_id AS collectionId,error_message AS error,created_at AS createdAt,finished_at AS finishedAt FROM scrape_runs ORDER BY created_at DESC LIMIT ?").all(limit) as Array<Record<string, unknown> & { id: string }>;
   return rows.map(row => {
     const run = live.get(row.id);
     return { ...row, log: run ? run.log.slice(-6) : [], elapsedSeconds: run && (row.status === "running" || row.status === "importing") ? Math.round((Date.now() - run.startedAt) / 1000) : null };

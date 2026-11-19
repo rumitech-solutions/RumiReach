@@ -18,6 +18,10 @@ RumiReach is a local-first CSV business-lead workspace by RumiTech Solutions. Im
 
 The dashboard is CSV-first. Large files are read incrementally in the browser and committed in batches, so the full CSV does not need to be held in memory at once. If a batch fails, previously committed batches remain saved and should be checked before retrying. WAHA is disabled by default and can be enabled from the WhatsApp draft panel settings. When disabled, the WhatsApp button shares the editable draft and selected image through the browser's file-sharing sheet where supported; browsers without file sharing open the text draft and download the image for manual attachment. When enabled and configured locally, a separate WAHA send action appears only for contacts with recorded explicit opt-in evidence and sends the selected image as a captioned image message; each send requires per-message operator confirmation. WAHA is an unofficial WhatsApp Web integration and may carry account-restriction risk; it is not an official Meta API. It does not perform live business discovery or connect to OSM, Overpass, Nominatim, Google Places, or other discovery providers. The repository retains some legacy schema/modules from the earlier prototype, but the current API and dashboard do not expose or run those discovery flows.
 
+## Navigation and collections
+
+The sidebar has separate pages: **Overview**, **Find leads**, **Import CSV**, **Collections** and **All businesses**. Every search run and CSV import is saved as a named *collection* (give it a name when you start, or one is generated). From **Collections** you can open a list (filters All businesses to it), export just that list, rename it, or delete it with its businesses. Finished searches have **Run again**; businesses can also be deleted individually.
+
 ## Find leads automatically (Google Maps scraper)
 
 The dashboard's **Find leads** panel runs the bundled scraper (`services/gmaps-scraper`, vendored from gosom/google-maps-scraper) on your own computer:

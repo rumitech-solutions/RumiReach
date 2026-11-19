@@ -1,10 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import FindLeads from "./FindLeads";
+import Collections from "./Collections";
 
 type Candidate = { id: string; name: string | null; category: string | null; address: string | null; phone_raw: string | null; website_url: string | null; public_email: string | null; source_url: string; observed_at: string; review_status: string; whatsapp_consent_status: string; whatsapp_consent_at?: string | null };
 type DirectoryResponse = { items: Candidate[]; total: number; page: number; pageSize: number; totalPages: number; categories: string[]; stats: { total: number; accepted: number; pending: number; withPhone: number; withWebsite: number } };
 type CsvRow = Record<string, string>;
 const PAGE_SIZE = 25;
+const VIEWS = [
+  { id: "overview", label: "Overview", icon: "⌂" },
+  { id: "find", label: "Find leads", icon: "⌕" },
+  { id: "import", label: "Import CSV", icon: "⇧" },
+  { id: "collections", label: "Collections", icon: "❏" },
+  { id: "leads", label: "All businesses", icon: "▤" }
+] as const;
+type ViewId = typeof VIEWS[number]["id"];
+function viewFromHash(): ViewId { const id = window.location.hash.replace("#", ""); return (VIEWS.find(item => item.id === id)?.id) || "overview"; }
 const DEFAULT_WHATSAPP_DRAFT = "Assalam-o-Alaikum {business_name},\\n\\nI’m reaching out from RumiTech Solutions. We help businesses with websites, software and digital solutions. Would you be open to a brief conversation about your business needs?\\n\\nThank you,\\nRumiTech Solutions";
 function csvCell(value: unknown) { const text = String(value ?? ""); return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text; }
 function formatCount(value: number) { return new Intl.NumberFormat().format(value || 0); }
@@ -175,6 +185,10 @@ export default function App() {
   const [categories, setCategories] = useState<string[]>([]);
   const [stats, setStats] = useState({ total: 0, accepted: 0, pending: 0, withPhone: 0, withWebsite: 0 });
   const [page, setPage] = useState(1);
+  const [view, setViewState] = useState<ViewId>(viewFromHash);
+  const [collection, setCollection] = useState("");
+  const [collectionOptions, setCollectionOptions] = useState<Array<{ id: string; name: string; count: number }>>([]);
+  const [importName, setImportName] = useState("");
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvBusy, setCsvBusy] = useState(false);
   const [progress, setProgress] = useState("");
@@ -195,6 +209,12 @@ export default function App() {
   const fileInput = useRef<HTMLInputElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
 
+  useEffect(() => { const onHash = () => setViewState(viewFromHash()); window.addEventListener("hashchange", onHash); return () => window.removeEventListener("hashchange", onHash); }, []);
+  function go(next: ViewId) { if (window.location.hash !== "#" + next) window.location.hash = next; else setViewState(next); window.scrollTo({ top: 0 }); }
+  async function loadCollectionOptions() {
+    try { const response = await fetch("/api/collections"); const data = await readApiJson<{ collections: Array<{ id: string; name: string; count: number }> }>(response, "Could not load collections"); setCollectionOptions(data.collections); } catch { /* optional */ }
+  }
+  useEffect(() => { void loadCollectionOptions(); }, [view, total]);
   useEffect(() => { localStorage.setItem("rumireach.whatsappDraft", whatsappDraft); }, [whatsappDraft]);
   useEffect(() => { void restoreOutreachImage().then(setWhatsappImage).catch(() => setError("Could not restore the saved WhatsApp image from this browser.")); }, []);
   useEffect(() => {
@@ -210,17 +230,19 @@ export default function App() {
     const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE), search: query, sort });
     if (category !== "all") params.set("category", category);
     if (review !== "all") params.set("status", review);
+    if (collection) params.set("collection", collection);
     fetch("/api/candidates?" + params.toString(), { signal: controller.signal })
       .then(response => readApiJson<DirectoryResponse>(response, "Could not load saved records"))
       .then(data => { setCandidates(data.items); setTotal(data.total); setTotalPages(Math.max(1, data.totalPages)); setCategories(data.categories); setStats(data.stats); setError(""); })
       .catch(reason => { if (!(reason instanceof DOMException && reason.name === "AbortError")) setError(reason instanceof Error ? reason.message : "Could not load records."); });
     return () => controller.abort();
-  }, [page, query, category, review, sort]);
+  }, [page, query, category, review, sort, collection]);
 
   async function refresh(requestedPage = page) {
     const params = new URLSearchParams({ page: String(requestedPage), pageSize: String(PAGE_SIZE), search: query, sort });
     if (category !== "all") params.set("category", category);
     if (review !== "all") params.set("status", review);
+    if (collection) params.set("collection", collection);
     const response = await fetch("/api/candidates?" + params.toString());
     const data = await readApiJson<DirectoryResponse>(response, "Could not load saved records");
     setCandidates(data.items); setTotal(data.total); setTotalPages(Math.max(1, data.totalPages)); setCategories(data.categories); setStats(data.stats);
@@ -231,7 +253,7 @@ export default function App() {
     setCsvBusy(true); setError(""); setMessage(""); setProgress("Preparing import…");
     let batchId = "";
     try {
-      const started = await fetch("/api/import/csv/start", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ filename: csvFile.name }) });
+      const started = await fetch("/api/import/csv/start", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ filename: csvFile.name, name: importName.trim() || undefined }) });
       const session = await readApiJson<{ batchId: string }>(started, "Could not start CSV import");
       if (!session.batchId) throw new Error("The import API did not return a batch ID. Check the API terminal and try again.");
       batchId = session.batchId;
@@ -245,7 +267,7 @@ export default function App() {
       const completed = await fetch("/api/import/csv/" + batchId + "/complete", { method: "POST" });
       const result = await readApiJson<{ imported: number; skipped: number; invalidWebsite: number }>(completed, "Could not complete CSV import");
       setMessage("Imported " + formatCount(result.imported) + " businesses. " + formatCount(result.skipped) + " blank-name rows skipped; " + formatCount(result.invalidWebsite) + " invalid website values ignored.");
-      setCsvFile(null); setPage(1);
+      setCsvFile(null); setImportName(""); setPage(1);
       if (fileInput.current) fileInput.current.value = "";
       setProgress("");
       try {
@@ -262,6 +284,13 @@ export default function App() {
         : detail);
       setProgress("Import stopped. Already saved batches remain in the database.");
     } finally { setCsvBusy(false); }
+  }
+
+  async function deleteBusiness(candidate: Candidate) {
+    if (!window.confirm("Delete " + (candidate.name || "this business") + " from your directory?")) return;
+    const response = await fetch("/api/candidates/" + candidate.id, { method: "DELETE" });
+    if (!response.ok) { setError("Could not delete the business."); return; }
+    void refresh().catch(reason => setError(reason.message));
   }
 
   async function setReviewStatus(id: string, status: string) {
@@ -355,6 +384,7 @@ export default function App() {
     const params = new URLSearchParams({ search: query, sort });
     if (category !== "all") params.set("category", category);
     if (review !== "all") params.set("status", review);
+    if (collection) params.set("collection", collection);
     const anchor = document.createElement("a");
     anchor.href = "/api/candidates/export?" + params.toString();
     anchor.download = "rumireach-leads.csv";
@@ -363,21 +393,27 @@ export default function App() {
 
   return <div className="app-shell">
     <aside className="sidebar"><div className="brand"><span className="brand-mark">R</span><span><strong>RumiReach</strong><small>BY RUMITECH</small></span></div>
-      <div className="workspace-label">WORKSPACE</div><nav><a className="nav-item active" href="#overview"><span className="nav-icon">⌂</span>Overview</a><a className="nav-item" href="#find"><span className="nav-icon">⌕</span>Find leads</a><a className="nav-item" href="#import"><span className="nav-icon">⇧</span>Import leads</a><a className="nav-item" href="#leads"><span className="nav-icon">▤</span>All businesses <span className="nav-count">{formatCount(stats.total)}</span></a></nav>
+      <div className="workspace-label">WORKSPACE</div><nav>{VIEWS.map(item => <a key={item.id} className={"nav-item" + (view === item.id ? " active" : "")} href={"#" + item.id} onClick={event => { event.preventDefault(); go(item.id); }}><span className="nav-icon">{item.icon}</span>{item.label}{item.id === "leads" && <span className="nav-count">{formatCount(stats.total)}</span>}{item.id === "collections" && <span className="nav-count">{collectionOptions.length}</span>}</a>)}</nav>
       <div className="sidebar-bottom"><div className="storage-card"><span className="storage-icon">◈</span><strong>Your data stays local</strong><p>Business records are stored in your local RumiReach workspace.</p><span className="storage-status"><i/> LOCAL DATABASE</span></div><div className="profile"><span className="avatar">R</span><span><strong>RumiTech Solutions</strong><small>Workspace owner</small></span><span className="profile-dots">···</span></div></div>
     </aside>
-    <main className="main-area"><header className="topbar"><div className="breadcrumbs">Workspace <span>/</span> <strong>Overview</strong></div><div className="top-actions"><span className="secure-pill"><i/> Private workspace</span><button className="icon-button" title="Refresh records" onClick={() => void refresh().catch(e => setError(e.message))}>↻</button></div></header>
-      <div className="content" id="overview"><section className="welcome-row"><div><div className="eyebrow"><span/> LEAD MANAGEMENT WORKSPACE</div><h1>Good work starts with <em>good leads.</em></h1><p>Bring your business data together. Import, organize, review and manage every opportunity in one place.</p></div><button className="primary-button" onClick={() => document.getElementById("import")?.scrollIntoView({ behavior: "smooth" })}><span>＋</span> Import leads</button></section>
+    <main className="main-area"><header className="topbar"><div className="breadcrumbs">Workspace <span>/</span> <strong>{VIEWS.find(item => item.id === view)?.label}</strong></div><div className="top-actions"><span className="secure-pill"><i/> Private workspace</span><button className="icon-button" title="Refresh records" onClick={() => void refresh().catch(e => setError(e.message))}>↻</button></div></header>
+      <div className="content"><div hidden={view !== "overview"}><section className="welcome-row"><div><div className="eyebrow"><span/> LEAD MANAGEMENT WORKSPACE</div><h1>Good work starts with <em>good leads.</em></h1><p>Bring your business data together. Import, organize, review and manage every opportunity in one place.</p></div><button className="primary-button" onClick={() => go("find")}><span>⌕</span> Find leads</button></section>
         <section className="stats-grid"><article className="stat-card"><div className="stat-top"><span>Total businesses</span><span className="stat-icon teal">▤</span></div><strong>{formatCount(stats.total)}</strong><small>Records in your workspace</small></article><article className="stat-card"><div className="stat-top"><span>Accepted leads</span><span className="stat-icon green">✓</span></div><strong>{formatCount(stats.accepted)}</strong><small>Approved for follow-up</small></article><article className="stat-card"><div className="stat-top"><span>Pending review</span><span className="stat-icon amber">◷</span></div><strong>{formatCount(stats.pending)}</strong><small>Awaiting your decision</small></article><article className="stat-card"><div className="stat-top"><span>Have phone numbers</span><span className="stat-icon blue">⌕</span></div><strong>{formatCount(stats.withPhone)}</strong><small>{stats.total ? Math.round(stats.withPhone / stats.total * 100) : 0}% of all records</small></article></section>
-        <FindLeads onImported={() => void refresh().catch(e => setError(e.message))}/>
+          <section className="quick-grid"><button className="quick-card" onClick={() => go("find")}><span>⌕</span><strong>Find leads</strong><small>Search by keyword, country, state and city.</small></button><button className="quick-card" onClick={() => go("import")}><span>⇧</span><strong>Import a CSV</strong><small>Upload your own list and name it.</small></button><button className="quick-card" onClick={() => go("collections")}><span>❏</span><strong>Collections</strong><small>{collectionOptions.length} saved search{collectionOptions.length === 1 ? "" : "es"} and imports.</small></button><button className="quick-card" onClick={() => go("leads")}><span>▤</span><strong>All businesses</strong><small>Review, filter and message your leads.</small></button></section>
+        </div>
+        <div hidden={view !== "find"}><FindLeads onImported={() => { void refresh().catch(e => setError(e.message)); void loadCollectionOptions(); }} onOpenCollection={id => { setCollection(id); setPage(1); go("leads"); }}/></div>
+        <div hidden={view !== "collections"}><Collections active={view === "collections"} onOpen={id => { setCollection(id); setPage(1); go("leads"); }} onChanged={() => { void refresh().catch(e => setError(e.message)); void loadCollectionOptions(); }}/></div>
+        <div hidden={view !== "import"}>
         <section className="panel import-panel" id="import"><div className="section-heading"><div><span className="section-kicker">02 / DATA INTAKE</span><h2>Bring your leads in</h2><p>Upload a CSV and let RumiReach organize the details for you.</p></div><span className="format-badge">CSV FILE</span></div>
           <div className={"dropzone" + (dragging ? " drag-active" : "")} onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); chooseFile(e.dataTransfer.files?.[0]); }} onClick={() => fileInput.current?.click()} role="button" tabIndex={0} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.current?.click(); } }}>
             <input ref={fileInput} type="file" accept=".csv,text/csv" onChange={e => chooseFile(e.target.files?.[0])}/><div className="upload-symbol"><span>↑</span></div><strong>{csvFile ? csvFile.name : "Drop your CSV file here"}</strong><p>{csvFile ? "Ready to import · " + (csvFile.size / 1024 / 1024).toFixed(2) + " MB" : "or click to browse files on your computer"}</p><span className="browse-button">Choose a file</span>
           </div><div className="import-meta"><span><b>↳</b> Streaming file reader</span><span><b>✓</b> No fixed row or file-size cap</span><span><b>◈</b> Batched local database writes</span></div>
+          <label className="find-field import-name"><span>Save this list as (optional)</span><input value={importName} maxLength={100} onChange={event => setImportName(event.target.value)} placeholder={csvFile ? csvFile.name.replace(/\.csv$/i, "") : "e.g. Karachi restaurants"}/></label>
           <div className="import-actions">{message && <div className="inline-success">✓ {message}</div>}{error && <div className="inline-error">{error}</div>}{progress && <div className="import-progress">{progress}</div>}<div className="import-submit"><span className="selected-file">{csvFile ? "Selected and ready" : "CSV files · UTF-8 supported"}</span><button className="primary-button" disabled={!csvFile || csvBusy} onClick={() => void importCsv()}>{csvBusy ? "Importing…" : "Import dataset"} <span>→</span></button></div></div>
           <p className="helper-text">Required column: <code>name</code>, <code>business_name</code> or <code>title</code>. Also accepts restaurant_name/business, complete_address, phone_number, website_url and Maps link columns. Imported details are marked unverified until reviewed.</p>
         </section>
-        <section className="panel leads-panel" id="leads"><div className="section-heading leads-heading"><div><span className="section-kicker">03 / YOUR DATABASE</span><h2>Business directory <span className="count-pill">{formatCount(total)}</span></h2><p>Search, browse and export your full filtered dataset without loading every record at once.</p></div><button className="secondary-button" disabled={!candidates.length} onClick={exportCsv}>↓ <span>Export CSV</span></button></div>
+        </div>
+        <div hidden={view !== "leads"}><section className="panel leads-panel" id="leads"><div className="section-heading leads-heading"><div><span className="section-kicker">03 / YOUR DATABASE</span><h2>Business directory <span className="count-pill">{formatCount(total)}</span></h2><p>Search, browse and export your full filtered dataset without loading every record at once.</p></div><button className="secondary-button" disabled={!candidates.length} onClick={exportCsv}>↓ <span>Export CSV</span></button></div>
           <div className="whatsapp-composer">
             <div className="whatsapp-composer-heading"><div><span className="section-kicker">04 / PERSONAL OUTREACH</span><h3>WhatsApp message draft</h3><p>One editable message and one reusable image for every business. Both are saved in this browser and the text is personalized with each business name.</p></div><button className="draft-reset" onClick={() => setWhatsappDraft(DEFAULT_WHATSAPP_DRAFT)}>Reset template</button></div>
             <textarea aria-label="Editable WhatsApp message draft" value={whatsappDraft} onChange={e => setWhatsappDraft(e.target.value)} placeholder="Write your WhatsApp message…"/>
@@ -395,10 +431,11 @@ export default function App() {
             <p className="image-attachment-help">On supported devices, choose WhatsApp in the share sheet and select the recipient. Otherwise RumiReach opens the selected business chat and downloads the image for manual attachment.</p>
             <div className="draft-footer"><span>Use <code>{'{business_name}'}</code> and <code>{'{category}'}</code> to personalize each message.</span><span className="draft-saved"><i/> Saved in this browser</span></div><details className="waha-settings"><summary><span>Optional integration settings</span><span className="waha-mode">{wahaEnabled ? "WAHA enabled" : "Draft mode · default"}</span></summary><div className="waha-settings-body"><label className="waha-toggle"><input type="checkbox" checked={wahaEnabled} onChange={e => setWahaEnabled(e.target.checked)}/><span><strong>Enable WAHA sending</strong><small>Off by default. When disabled, every WhatsApp button opens your editable draft in WhatsApp.</small></span></label><div className={"waha-status" + (wahaConnected ? " connected" : "")}><span>{wahaConnected ? "●" : "○"}</span> {wahaStatus}</div><p>To configure WAHA, set <code>WAHA_BASE_URL</code>, <code>WAHA_SESSION</code> and <code>WAHA_API_KEY</code> in the local API environment, start WAHA and pair the account. The API key stays server-side. After enabling, contacts still need recorded opt-in consent before the separate WAHA send action is available. The selected shared image is sent with the personalized draft as its caption.</p></div></details>
           </div>
-          <div className="filter-bar"><div className="search-box"><span>⌕</span><input value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} placeholder="Search businesses, phone, location…"/></div><select aria-label="Category filter" value={category} onChange={e => { setCategory(e.target.value); setPage(1); }}><option value="all">All categories</option>{categories.map(value => <option key={value} value={value}>{value}</option>)}</select><select aria-label="Review filter" value={review} onChange={e => { setReview(e.target.value); setPage(1); }}><option value="all">All statuses</option><option value="pending">Pending</option><option value="accepted">Accepted</option><option value="needs_review">Needs review</option><option value="rejected">Rejected</option></select><select aria-label="Sort records" value={sort} onChange={e => { setSort(e.target.value); setPage(1); }}><option value="newest">Recently added</option><option value="name">Business name</option><option value="category">Category</option></select></div>
-          {!pageRows.length ? <div className="empty-state"><div className="empty-art">▤</div><strong>{stats.total ? "No matching businesses" : "Your directory starts here"}</strong><p>{stats.total ? "Try another search or adjust your filters." : "Import your first CSV dataset to see your business records appear here."}</p><button className="secondary-button" onClick={() => document.getElementById("import")?.scrollIntoView({ behavior: "smooth" })}>Import a CSV <span>→</span></button></div> : <div className="table-scroll"><table><thead><tr><th>BUSINESS</th><th>LOCATION</th><th>CONTACT</th><th>ONLINE PRESENCE</th><th>STATUS</th><th>WHATSAPP CONSENT</th><th></th></tr></thead><tbody>{pageRows.map(c => <tr key={c.id}><td><div className="business-cell"><span className="business-avatar">{(c.name || "?").trim().charAt(0).toUpperCase()}</span><span><strong>{c.name || "Unnamed business"}</strong><small>{c.category || "Uncategorized"}</small></span></div></td><td><span className="address-cell">{c.address || "—"}</span></td><td><div className="contact-actions">{c.phone_raw ? <><a className="phone-link" href={"tel:" + c.phone_raw}>{c.phone_raw}</a><button className="whatsapp-button" onClick={() => openWhatsApp(c)} title={"Open WhatsApp draft for " + c.name}>◉ WhatsApp</button></> : <span className="no-phone">No phone number</span>}</div></td><td>{c.website_url ? <a className="website-link" href={c.website_url} target="_blank" rel="noreferrer">Visit website ↗</a> : c.public_email ? <a className="website-link" href={"mailto:" + c.public_email}>{c.public_email}</a> : "—"}{c.public_email && c.website_url && <small className="email-sub">{c.public_email}</small>}</td><td><select className={"status-select status-" + c.review_status} aria-label={"Review status for " + c.name} value={c.review_status} onChange={e => void setReviewStatus(c.id, e.target.value)}><option value="pending">Pending</option><option value="accepted">Accepted</option><option value="needs_review">Needs review</option><option value="rejected">Rejected</option></select></td><td><div className="consent-actions"><select aria-label={"WhatsApp consent for " + c.name} value={c.whatsapp_consent_status || "not_confirmed"} onChange={e => { if (e.target.value === "opted_in" || e.target.value === "opted_out") void setWhatsAppConsent(c, e.target.value); }}><option value="not_confirmed">Not confirmed</option><option value="opted_in">Opted in</option><option value="opted_out">Opted out</option></select>{wahaEnabled && c.whatsapp_consent_status === "opted_in" && <button className="whatsapp-button" disabled={!wahaConnected || sendingId === c.id} onClick={() => void sendWhatsApp(c)}>{sendingId === c.id ? "Sending…" : "Send via WAHA"}</button>}</div></td><td><span className="row-menu" title={"Imported " + new Date(c.observed_at).toLocaleDateString()}>···</span></td></tr>)}</tbody></table></div>}
+          <div className="filter-bar"><div className="search-box"><span>⌕</span><input value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} placeholder="Search businesses, phone, location…"/></div><select aria-label="Collection filter" value={collection} onChange={e => { setCollection(e.target.value); setPage(1); }}><option value="">All collections</option>{collectionOptions.map(item => <option key={item.id} value={item.id}>{item.name} ({item.count})</option>)}</select><select aria-label="Category filter" value={category} onChange={e => { setCategory(e.target.value); setPage(1); }}><option value="all">All categories</option>{categories.map(value => <option key={value} value={value}>{value}</option>)}</select><select aria-label="Review filter" value={review} onChange={e => { setReview(e.target.value); setPage(1); }}><option value="all">All statuses</option><option value="pending">Pending</option><option value="accepted">Accepted</option><option value="needs_review">Needs review</option><option value="rejected">Rejected</option></select><select aria-label="Sort records" value={sort} onChange={e => { setSort(e.target.value); setPage(1); }}><option value="newest">Recently added</option><option value="name">Business name</option><option value="category">Category</option></select></div>
+          {!pageRows.length ? <div className="empty-state"><div className="empty-art">▤</div><strong>{stats.total ? "No matching businesses" : "Your directory starts here"}</strong><p>{stats.total ? "Try another search or adjust your filters." : "Import your first CSV dataset to see your business records appear here."}</p><button className="secondary-button" onClick={() => go("import")}>Import a CSV <span>→</span></button></div> : <div className="table-scroll"><table><thead><tr><th>BUSINESS</th><th>LOCATION</th><th>CONTACT</th><th>ONLINE PRESENCE</th><th>STATUS</th><th>WHATSAPP CONSENT</th><th></th><th></th></tr></thead><tbody>{pageRows.map(c => <tr key={c.id}><td><div className="business-cell"><span className="business-avatar">{(c.name || "?").trim().charAt(0).toUpperCase()}</span><span><strong>{c.name || "Unnamed business"}</strong><small>{c.category || "Uncategorized"}</small></span></div></td><td><span className="address-cell">{c.address || "—"}</span></td><td><div className="contact-actions">{c.phone_raw ? <><a className="phone-link" href={"tel:" + c.phone_raw}>{c.phone_raw}</a><button className="whatsapp-button" onClick={() => openWhatsApp(c)} title={"Open WhatsApp draft for " + c.name}>◉ WhatsApp</button></> : <span className="no-phone">No phone number</span>}</div></td><td>{c.website_url ? <a className="website-link" href={c.website_url} target="_blank" rel="noreferrer">Visit website ↗</a> : c.public_email ? <a className="website-link" href={"mailto:" + c.public_email}>{c.public_email}</a> : "—"}{c.public_email && c.website_url && <small className="email-sub">{c.public_email}</small>}</td><td><select className={"status-select status-" + c.review_status} aria-label={"Review status for " + c.name} value={c.review_status} onChange={e => void setReviewStatus(c.id, e.target.value)}><option value="pending">Pending</option><option value="accepted">Accepted</option><option value="needs_review">Needs review</option><option value="rejected">Rejected</option></select></td><td><div className="consent-actions"><select aria-label={"WhatsApp consent for " + c.name} value={c.whatsapp_consent_status || "not_confirmed"} onChange={e => { if (e.target.value === "opted_in" || e.target.value === "opted_out") void setWhatsAppConsent(c, e.target.value); }}><option value="not_confirmed">Not confirmed</option><option value="opted_in">Opted in</option><option value="opted_out">Opted out</option></select>{wahaEnabled && c.whatsapp_consent_status === "opted_in" && <button className="whatsapp-button" disabled={!wahaConnected || sendingId === c.id} onClick={() => void sendWhatsApp(c)}>{sendingId === c.id ? "Sending…" : "Send via WAHA"}</button>}</div></td><td><span className="row-menu" title={"Imported " + new Date(c.observed_at).toLocaleDateString()}>···</span></td><td><button className="row-delete" title="Delete business" onClick={() => void deleteBusiness(c)}>✕</button></td></tr>)}</tbody></table></div>}
           <div className="table-footer"><span>Showing <strong>{formatCount(total ? (page - 1) * PAGE_SIZE + 1 : 0)}–{formatCount(Math.min(page * PAGE_SIZE, total))}</strong> of <strong>{formatCount(total)}</strong> businesses</span><div className="pagination"><button disabled={page <= 1} onClick={() => setPage(value => Math.max(1, value - 1))}>← Previous</button><span>Page {page} / {totalPages}</span><button disabled={page >= totalPages} onClick={() => setPage(value => Math.min(totalPages, value + 1))}>Next →</button></div></div>
         </section>
+        </div>
         <footer className="app-footer"><span>© {new Date().getFullYear()} RumiReach · RumiTech Solutions</span><span>Built for better business connections.</span></footer>
         <span className="sr-only">{formatCount(stats.withWebsite)} records include a website.</span>
       </div>

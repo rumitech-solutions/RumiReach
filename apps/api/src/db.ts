@@ -46,3 +46,6 @@ db.prepare("UPDATE search_jobs SET status='failed',error_message='API restarted 
 db.exec("CREATE INDEX IF NOT EXISTS idx_candidates_source_url ON candidates(source_id, source_url);");
 db.exec("CREATE TABLE IF NOT EXISTS scrape_runs (id TEXT PRIMARY KEY, keywords TEXT NOT NULL, country TEXT NOT NULL, state TEXT, city TEXT, query_count INTEGER NOT NULL, runner TEXT NOT NULL, status TEXT NOT NULL, imported INTEGER NOT NULL DEFAULT 0, skipped INTEGER NOT NULL DEFAULT 0, duplicates INTEGER NOT NULL DEFAULT 0, error_message TEXT, import_job_id TEXT, created_at TEXT NOT NULL, finished_at TEXT);");
 db.prepare("UPDATE scrape_runs SET status='failed',error_message='API restarted while this scrape was running.',finished_at=? WHERE status IN ('running','importing')").run(new Date().toISOString());
+try { db.exec("ALTER TABLE search_jobs ADD COLUMN name TEXT"); } catch { /* already migrated */ }
+try { db.exec("ALTER TABLE scrape_runs ADD COLUMN name TEXT"); } catch { /* already migrated */ }
+try { db.exec("ALTER TABLE scrape_runs ADD COLUMN request_json TEXT"); } catch { /* already migrated */ }

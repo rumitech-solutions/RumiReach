@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 type Country = { code: string; name: string; stateCount: number };
 type GeoState = { id: string; name: string; cityCount: number };
-type Run = { id: string; keywords: string; country: string; state: string | null; city: string | null; queryCount: number; runner: string; status: string; imported: number; duplicates: number; error: string | null; createdAt: string; log: string[]; elapsedSeconds: number | null };
+type Run = { id: string; name: string | null; collectionId: string | null; keywords: string; country: string; state: string | null; city: string | null; queryCount: number; runner: string; status: string; imported: number; duplicates: number; error: string | null; createdAt: string; log: string[]; elapsedSeconds: number | null };
 type Status = { runner: { available: boolean; mode: string; hint: string }; maxCities: number; defaultCities: number };
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
@@ -17,7 +17,7 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 const isActive = (run: Run) => run.status === "running" || run.status === "importing";
 const formatElapsed = (seconds: number) => Math.floor(seconds / 60) + "m " + String(seconds % 60).padStart(2, "0") + "s";
 
-export default function FindLeads({ onImported }: { onImported: () => void }) {
+export default function FindLeads({ onImported, onOpenCollection }: { onImported: () => void; onOpenCollection: (id: string) => void }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [countries, setCountries] = useState<Country[]>([]);
   const [states, setStates] = useState<GeoState[]>([]);
@@ -26,6 +26,7 @@ export default function FindLeads({ onImported }: { onImported: () => void }) {
   const [stateId, setStateId] = useState("");
   const [city, setCity] = useState("");
   const [keywords, setKeywords] = useState("");
+  const [name, setName] = useState("");
   const [maxCities, setMaxCities] = useState(10);
   const [depth, setDepth] = useState(5);
   const [email, setEmail] = useState(false);
@@ -85,11 +86,17 @@ export default function FindLeads({ onImported }: { onImported: () => void }) {
     try {
       await api("/api/scrape/runs", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ keywords: keywordList, country, state: stateId || undefined, city: city || undefined, maxCities, depth, email, authorized })
+        body: JSON.stringify({ keywords: keywordList, name: name.trim() || undefined, country, state: stateId || undefined, city: city || undefined, maxCities, depth, email, authorized })
       });
       await loadRuns();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not start the scrape."); }
     finally { setBusy(false); }
+  }
+
+  async function rerun(id: string) {
+    setError("");
+    try { await api("/api/scrape/runs/" + id + "/rerun", { method: "POST" }); await loadRuns(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "Could not repeat the search."); }
   }
 
   async function cancel(id: string) {
@@ -106,6 +113,8 @@ export default function FindLeads({ onImported }: { onImported: () => void }) {
       <label className="find-field find-wide"><span>What are you looking for?</span>
         <textarea value={keywords} onChange={event => setKeywords(event.target.value)} placeholder={"dentist\nrestaurant, cafe"} rows={3}/>
         <small>One search term per line or separated by commas, e.g. “dentist”, “gym”, “real estate agent”.</small></label>
+      <label className="find-field find-wide"><span>Save this search as (optional)</span>
+        <input value={name} maxLength={100} onChange={event => setName(event.target.value)} placeholder="e.g. Lahore dentists – Nov"/><small>Results are saved as a named collection you can reopen, export or delete later. Left empty, a name is made from your search.</small></label>
       <label className="find-field"><span>Country</span>
         <select value={country} onChange={event => setCountry(event.target.value)} disabled={!countries.length}><option value="">{countries.length ? "Select a country" : "Loading…"}</option>{countries.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}</select></label>
       <label className="find-field"><span>State / province</span>
@@ -126,10 +135,11 @@ export default function FindLeads({ onImported }: { onImported: () => void }) {
       <button className="primary-button" disabled={!canStart} onClick={() => void start()}>{busy ? "Starting…" : "Start finding leads"} <span>→</span></button>
     </div>
     {runs.length > 0 && <div className="find-runs"><h3>Recent runs</h3>{runs.map(run => <div key={run.id} className={"find-run find-" + run.status}>
-      <div className="find-run-head"><strong>{run.keywords}</strong><span>{[run.city, run.state, run.country].filter(Boolean).join(", ")}</span><span className="find-badge">{run.status}</span></div>
+      <div className="find-run-head"><strong>{run.name || run.keywords}</strong><span>{[run.city, run.state, run.country].filter(Boolean).join(", ")}</span><span className="find-badge">{run.status}</span></div>
       <small>{run.queryCount} search{run.queryCount === 1 ? "" : "es"} · {run.runner}{run.elapsedSeconds !== null ? " · " + formatElapsed(run.elapsedSeconds) : ""}{run.status === "completed" ? " · " + run.imported + " imported, " + run.duplicates + " already saved" : ""}</small>
       {isActive(run) && run.log.length > 0 && <pre className="find-log">{run.log.join("\n")}</pre>}
       {run.error && <small className="find-error">{run.error}</small>}
+      {run.status !== "running" && run.status !== "importing" && <div className="find-run-actions">{run.collectionId && <button className="secondary-button" onClick={() => onOpenCollection(run.collectionId!)}>Open results</button>}<button className="secondary-button" disabled={!!active} onClick={() => void rerun(run.id)}>Run again</button></div>}
       {run.status === "running" && <button className="secondary-button" onClick={() => void cancel(run.id)}>Stop</button>}
     </div>)}</div>}
     <p className="helper-text">Results arrive as unverified records marked with their Google Maps link. Re-running a search skips businesses already in your directory.</p>

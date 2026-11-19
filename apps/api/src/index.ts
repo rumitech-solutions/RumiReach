@@ -23,7 +23,7 @@ function isLocalWahaUrl() { try { const url = new URL(WAHA_BASE_URL); return ["1
 app.get("/api/health", async () => ({ ok: true, app: "RumiReach", version: "0.3.0" }));
 
 app.get("/api/candidates", async (request) => {
-  const q = request.query as { page?: string; pageSize?: string; search?: string; category?: string; status?: string; sort?: string };
+  const q = request.query as { page?: string; pageSize?: string; search?: string; category?: string; status?: string; sort?: string; collection?: string };
   const page = Math.max(1, Math.floor(Number(q.page) || 1));
   const pageSize = Math.min(100, Math.max(10, Math.floor(Number(q.pageSize) || 25)));
   const search = (q.search || "").trim().slice(0, 200);
@@ -37,6 +37,7 @@ app.get("/api/candidates", async (request) => {
     params.push(term, term, term, term, term, term);
   }
   if (category) { where.push("category = ?"); params.push(category); }
+  if (q.collection) { where.push("job_id = ?"); params.push(q.collection.slice(0, 64)); }
   if (status) { where.push("review_status = ?"); params.push(status); }
   const clause = where.join(" AND ");
   const total = (db.prepare("SELECT COUNT(*) AS count FROM candidates WHERE " + clause).get(...params) as { count: number }).count;
@@ -48,7 +49,7 @@ app.get("/api/candidates", async (request) => {
 });
 
 app.get("/api/candidates/export", async (request, reply) => {
-  const q = request.query as { search?: string; category?: string; status?: string; sort?: string };
+  const q = request.query as { search?: string; category?: string; status?: string; sort?: string; collection?: string };
   const search = (q.search || "").trim().slice(0, 200);
   const category = (q.category || "").trim().slice(0, 100);
   const status = ["pending", "accepted", "rejected", "needs_review"].includes(q.status || "") ? q.status! : "";
@@ -56,34 +57,33 @@ app.get("/api/candidates/export", async (request, reply) => {
   const params: string[] = [IMPORT_SOURCE];
   if (search) {
     where.push("(name LIKE ? OR category LIKE ? OR address LIKE ? OR phone_raw LIKE ? OR website_url LIKE ? OR public_email LIKE ?)");
-    const term = "%" + search + "%";
+    const term = "%" + search.replace(/[\\%_]/g, "\\$&") + "%";
     params.push(term, term, term, term, term, term);
   }
   if (category) { where.push("category = ?"); params.push(category); }
+  if (q.collection) { where.push("job_id = ?"); params.push(q.collection.slice(0, 64)); }
   if (status) { where.push("review_status = ?"); params.push(status); }
   const order = q.sort === "name" ? "name COLLATE NOCASE ASC" : q.sort === "category" ? "category COLLATE NOCASE ASC" : "observed_at DESC";
   const statement = db.prepare("SELECT name,category,address,phone_raw,website_url,public_email,source_url,review_status FROM candidates WHERE " + where.join(" AND ") + " ORDER BY " + order);
   const cell = (value: unknown) => {
     const text = String(value ?? "");
-    return /[",\\r\\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+    return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
   };
   function* csvLines() {
-    yield "\\uFEFFname,category,address,phone,website,email,source_url,review_status\\r\\n";
+    yield "\uFEFFname,category,address,phone,website,email,source_url,review_status\r\n";
     for (const row of statement.iterate(...params) as Iterable<Record<string, unknown>>) {
-      yield [row.name,row.category,row.address,row.phone_raw,row.website_url,row.public_email,row.source_url,row.review_status].map(cell).join(",") + "\\r\\n";
+      yield [row.name,row.category,row.address,row.phone_raw,row.website_url,row.public_email,row.source_url,row.review_status].map(cell).join(",") + "\r\n";
     }
   }
   return reply.type("text/csv; charset=utf-8").header("Content-Disposition", 'attachment; filename="rumireach-leads.csv"').send(Readable.from(csvLines()));
 });
 
 app.post("/api/import/csv/start", async (request, reply) => {
-  const body = request.body as { filename?: string };
+  const body = request.body as { filename?: string; name?: string };
   const filename = (body?.filename || "business-import.csv").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100) || "business-import.csv";
-  const batchId = randomUUID(), jobId = randomUUID(), createdAt = new Date().toISOString();
-  db.prepare("INSERT OR IGNORE INTO sources (id,name,terms_url,attribution,enabled,reviewed_at) VALUES (?,?,?,?,?,?)").run(IMPORT_SOURCE, "User-provided CSV", "Operator-supplied dataset; review original source terms before reuse.", "Preserve source attribution and only import data you are authorized to use.", 1, createdAt);
-  db.prepare("INSERT INTO search_jobs (id,category,city,locality,bbox_south,bbox_west,bbox_north,bbox_east,source_id,status,candidate_count,created_at,finished_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)").run(jobId, "mixed", "CSV import", filename, 0, 0, 0, 0, IMPORT_SOURCE, "running", 0, createdAt, null);
-  const session: ImportSession = { batchId, jobId, filename, nextRow: 2, imported: 0, skipped: 0, invalidWebsite: 0, status: "running" };
-  importSessions.set(batchId, session);
+  const name = (body?.name || "").replace(/\s+/g, " ").trim().slice(0, 100) || undefined;
+  const session = createImportSession(filename, { name });
+  const { batchId, jobId } = session;
   return { batchId, jobId, status: "running", nextRow: session.nextRow };
 });
 
@@ -169,6 +169,7 @@ const ScrapeBody = z.object({
   maxCities: z.number().int().min(1).max(MAX_CITIES_LIMIT).default(MAX_CITIES_DEFAULT),
   depth: z.number().int().min(1).max(20).default(5),
   email: z.boolean().default(false),
+  name: z.string().trim().max(100).optional(),
   lang: z.string().regex(/^[a-z]{2}(-[A-Za-z]{2,4})?$/).default("en"),
   authorized: z.literal(true, { error: "Confirm that you are authorized to collect and use this data." })
 });
@@ -192,10 +193,9 @@ app.post("/api/scrape/runs", async (request, reply) => {
     cities = [body.city];
   } else if (state) cities = state.cities.slice(0, body.maxCities);
   try {
-    const run = await startScrape(
-      { keywords: body.keywords, countryName: country.name, stateName: state?.name, cities, depth: body.depth, email: body.email, lang: body.lang },
-      { country: country.name, state: state?.name, city: body.city }
-    );
+    const req = { keywords: body.keywords, countryName: country.name, stateName: state?.name, cities, depth: body.depth, email: body.email, lang: body.lang };
+    const meta = { country: country.name, state: state?.name, city: body.city };
+    const run = await startScrape(req, { ...meta, name: body.name, request: { req, meta } });
     return reply.code(202).send({ ...run, cities: cities.length });
   } catch (error) {
     return reply.code(400).send({ error: error instanceof Error ? error.message : "Could not start the scrape." });
@@ -209,6 +209,45 @@ app.post("/api/scrape/runs/:id/cancel", async (request, reply) => {
   return cancelScrape(id) ? { ok: true } : reply.code(404).send({ error: "That scrape is not running." });
 });
 
+
+app.post("/api/scrape/runs/:id/rerun", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const row = db.prepare("SELECT name,request_json FROM scrape_runs WHERE id=?").get(id) as { name: string | null; request_json: string | null } | undefined;
+  if (!row?.request_json) return reply.code(404).send({ error: "That run cannot be repeated." });
+  if (activeRunId()) return reply.code(409).send({ error: "Another scrape is already running. Wait for it to finish or cancel it." });
+  const saved = JSON.parse(row.request_json) as { req: Parameters<typeof startScrape>[0]; meta: Parameters<typeof startScrape>[1] };
+  try { return reply.code(202).send(await startScrape(saved.req, { ...saved.meta, name: (row.name || "Search") + " (again)", request: saved })); }
+  catch (error) { return reply.code(400).send({ error: error instanceof Error ? error.message : "Could not start the scrape." }); }
+});
+
+// ---- Collections: every import / scrape is saved as a named, renameable, deletable list ----
+app.get("/api/collections", async () => {
+  const rows = db.prepare("SELECT j.id, COALESCE(NULLIF(j.name,''), j.locality) AS name, j.locality AS filename, j.category, j.city AS place, j.status, j.created_at AS createdAt, (SELECT COUNT(*) FROM candidates c WHERE c.job_id=j.id) AS count, (SELECT COUNT(*) FROM candidates c WHERE c.job_id=j.id AND c.review_status='accepted') AS accepted FROM search_jobs j WHERE j.source_id=? ORDER BY j.created_at DESC").all(IMPORT_SOURCE) as Array<{ filename: string }>;
+  return { collections: rows.map(row => ({ ...row, type: row.filename.startsWith("gmaps-scrape-") ? "search" : "csv" })) };
+});
+app.patch("/api/collections/:id", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const name = String((request.body as { name?: string })?.name || "").replace(/\s+/g, " ").trim().slice(0, 100);
+  if (!name) return reply.code(400).send({ error: "Enter a name." });
+  const result = db.prepare("UPDATE search_jobs SET name=? WHERE id=? AND source_id=?").run(name, id, IMPORT_SOURCE);
+  if (!result.changes) return reply.code(404).send({ error: "Collection not found." });
+  db.prepare("UPDATE scrape_runs SET name=? WHERE import_job_id=?").run(name, id);
+  return { ok: true };
+});
+app.delete("/api/collections/:id", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  const deleted = db.transaction(() => {
+    const removed = (db.prepare("SELECT COUNT(*) AS n FROM candidates WHERE job_id=?").get(id) as { n: number }).n;
+    const result = db.prepare("DELETE FROM search_jobs WHERE id=? AND source_id=?").run(id, IMPORT_SOURCE);
+    if (result.changes) db.prepare("UPDATE scrape_runs SET import_job_id=NULL WHERE import_job_id=?").run(id);
+    return result.changes ? removed : -1;
+  })();
+  return deleted < 0 ? reply.code(404).send({ error: "Collection not found." }) : { ok: true, removed: deleted };
+});
+app.delete("/api/candidates/:id", async (request, reply) => {
+  const { id } = request.params as { id: string };
+  return db.prepare("DELETE FROM candidates WHERE id=? AND source_id=?").run(id, IMPORT_SOURCE).changes ? { ok: true } : reply.code(404).send({ error: "Business not found." });
+});
 
 app.get("/api/whatsapp/status", async () => {
   if (!WAHA_API_KEY || !isLocalWahaUrl()) return { configured: false, connected: false, message: "Set localhost WAHA_BASE_URL and WAHA_API_KEY in the API environment." };

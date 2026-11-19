@@ -37,10 +37,10 @@ export function insertRows(session: ImportSession, rows: ImportRow[], startRow: 
 }
 
 
-export function createImportSession(filename: string, meta: { category?: string; city?: string } = {}): ImportSession {
+export function createImportSession(filename: string, meta: { name?: string; category?: string; city?: string } = {}): ImportSession {
   const batchId = randomUUID(), jobId = randomUUID(), createdAt = new Date().toISOString();
   db.prepare("INSERT OR IGNORE INTO sources (id,name,terms_url,attribution,enabled,reviewed_at) VALUES (?,?,?,?,?,?)").run(IMPORT_SOURCE, "User-provided CSV", "Operator-supplied dataset; review original source terms before reuse.", "Preserve source attribution and only import data you are authorized to use.", 1, createdAt);
-  db.prepare("INSERT INTO search_jobs (id,category,city,locality,bbox_south,bbox_west,bbox_north,bbox_east,source_id,status,candidate_count,created_at,finished_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)").run(jobId, meta.category || "mixed", meta.city || "CSV import", filename, 0, 0, 0, 0, IMPORT_SOURCE, "running", 0, createdAt, null);
+  db.prepare("INSERT INTO search_jobs (id,category,city,locality,bbox_south,bbox_west,bbox_north,bbox_east,source_id,status,candidate_count,created_at,finished_at,name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(jobId, meta.category || "mixed", meta.city || "CSV import", filename, 0, 0, 0, 0, IMPORT_SOURCE, "running", 0, createdAt, null, meta.name || filename.replace(/\.csv$/i, ""));
   const session: ImportSession = { batchId, jobId, filename, nextRow: 2, imported: 0, skipped: 0, invalidWebsite: 0, status: "running" };
   importSessions.set(batchId, session);
   return session;
