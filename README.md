@@ -69,7 +69,18 @@ cd RumiReach
 docker compose up -d --build
 ```
 
-Open http://localhost:4317. The first build takes several minutes (it compiles the bundled Google Maps scraper and downloads Chromium and the official WAHA image). Compose starts RumiReach (dashboard + API + scraper) and WAHA together; in the dashboard enable WAHA, scan the QR code, and you are set. Everything is reachable from this computer only. Your data is kept in the `rumireach-data` and `waha-sessions` Docker volumes; update with `git pull && docker compose up -d --build`. Optional: put `WAHA_API_KEY=...` in a `.env` file next to `docker-compose.yml` to replace the default internal key (WAHA is not exposed outside the Compose network).
+Open http://localhost:4317. The first build takes a few minutes (it pulls the upstream Google Maps scraper image, which includes Chromium, and the official WAHA image). Compose starts RumiReach (dashboard + API + scraper) and WAHA together; in the dashboard enable WAHA, scan the QR code, and you are set. Everything is reachable from this computer only. Your data is kept in the `rumireach-data` and `waha-sessions` Docker volumes; 
+**Updating** (RumiReach, the scraper and WAHA are updated independently of each other):
+
+```bash
+git pull                                   # RumiReach itself
+docker compose pull                        # WAHA (devlikeapro/waha)
+docker compose build --pull                # Google Maps scraper (gosom/google-maps-scraper) + RumiReach
+docker compose up -d
+```
+
+Nothing updates automatically, on purpose: WhatsApp (WAHA) and the scraper's Google Maps parsing both change behaviour between versions, so update when you choose to. To freeze a version, pin it (`image: devlikeapro/waha:<tag>` in `docker-compose.yml`, or `SCRAPER_IMAGE=gosom/google-maps-scraper:<tag>` as a build arg).
+ Optional: put `WAHA_API_KEY=...` in a `.env` file next to `docker-compose.yml` to replace the default internal key (WAHA is not exposed outside the Compose network).
 
 ## Run locally
 

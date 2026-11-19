@@ -1,27 +1,11 @@
 # syntax=docker/dockerfile:1
-# RumiReach in one image: dashboard + API + the bundled Google Maps scraper (with Chromium).
+# RumiReach in one image: dashboard + API + the Google Maps scraper (with Chromium).
 # Not tested in CI yet — build with:  docker compose up -d --build
-ARG GO_VERSION=1.27.4
-
-# Chromium + Playwright driver for the scraper (same approach as the upstream scraper image)
-FROM golang:${GO_VERSION}-trixie AS playwright-deps
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/browsers
-ENV PLAYWRIGHT_DRIVER_PATH=/opt/ms-playwright-go
-ARG PLAYWRIGHT_GO_VERSION=v0.6100.0
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
-    && apt-get clean && rm -rf /var/lib/apt/lists/* \
-    && go install github.com/mxschmitt/playwright-go/cmd/playwright@${PLAYWRIGHT_GO_VERSION} \
-    && mkdir -p /opt/browsers \
-    && playwright install chromium --with-deps
-
-# The scraper binary
-FROM golang:${GO_VERSION}-trixie AS scraper-build
-WORKDIR /src
-COPY services/gmaps-scraper/go.mod services/gmaps-scraper/go.sum ./
-RUN go mod download
-COPY services/gmaps-scraper/ ./
-RUN CGO_ENABLED=0 go build -ldflags="-w -s" -o /out/google-maps-scraper .
+# The Google Maps scraper (binary + its Chromium/Playwright driver) is taken from the upstream image,
+# so updating it is just a rebuild:  docker compose build --pull
+# Pin a version by setting SCRAPER_IMAGE, e.g. gosom/google-maps-scraper:v1.12.1
+ARG SCRAPER_IMAGE=gosom/google-maps-scraper:latest
+FROM ${SCRAPER_IMAGE} AS scraper
 
 # RumiReach API + web
 FROM node:24-trixie AS app-build
@@ -49,9 +33,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxkbcommon0 libatspi2.0-0 libx11-6 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxrandr2 \
     libgbm1 libpango-1.0-0 libcairo2 libasound2 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
-COPY --from=playwright-deps /opt/browsers /opt/browsers
-COPY --from=playwright-deps /opt/ms-playwright-go /opt/ms-playwright-go
-COPY --from=scraper-build /out/google-maps-scraper /usr/local/bin/google-maps-scraper
+COPY --from=scraper /opt/browsers /opt/browsers
+COPY --from=scraper /opt/ms-playwright-go /opt/ms-playwright-go
+COPY --from=scraper /usr/bin/google-maps-scraper /usr/local/bin/google-maps-scraper
 RUN chmod -R 755 /opt/browsers /opt/ms-playwright-go
 WORKDIR /app
 COPY --from=app-build /app /app
