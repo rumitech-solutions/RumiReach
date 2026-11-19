@@ -59,6 +59,18 @@ Start WAHA locally, pair its session with the WhatsApp account using the WAHA QR
 
 Import only datasets you are authorized to collect, store, and reuse. A CSV file's availability or a scraper's open-source license does not grant permission to reuse the underlying third-party data. RumiReach does not verify imported business details or source permissions automatically.
 
+## Run everything with Docker (one command)
+
+Only Docker Desktop is needed (no Node.js, Go or separate repos):
+
+```bash
+git clone https://github.com/rumitech-solutions/RumiReach.git
+cd RumiReach
+docker compose up -d --build
+```
+
+Open http://localhost:4317. The first build takes several minutes (it compiles the bundled Google Maps scraper and downloads Chromium and the official WAHA image). Compose starts RumiReach (dashboard + API + scraper) and WAHA together; in the dashboard enable WAHA, scan the QR code, and you are set. Everything is reachable from this computer only. Your data is kept in the `rumireach-data` and `waha-sessions` Docker volumes; update with `git pull && docker compose up -d --build`. Optional: put `WAHA_API_KEY=...` in a `.env` file next to `docker-compose.yml` to replace the default internal key (WAHA is not exposed outside the Compose network).
+
 ## Run locally
 
 1. Install Node.js 24.

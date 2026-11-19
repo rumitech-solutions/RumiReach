@@ -47,17 +47,19 @@ async function docker(args: string[], timeout = 15_000) {
   return run("docker", args, { timeout, windowsHide: true, maxBuffer: 4 * 1024 * 1024 });
 }
 
-export type ServiceState = { docker: boolean; container: "missing" | "running" | "stopped"; starting: boolean; error: string };
+export type ServiceState = { external: boolean; docker: boolean; container: "missing" | "running" | "stopped"; starting: boolean; error: string };
 let starting: Promise<void> | null = null;
 let lastError = "";
 
 export async function serviceState(): Promise<ServiceState> {
+  // Docker Compose runs WAHA next to RumiReach; there is nothing for us to start or stop.
+  if (process.env.RUMIREACH_WAHA_EXTERNAL === "true") return { external: true, docker: true, container: "running", starting: false, error: "" };
   try { await docker(["version", "--format", "{{.Server.Version}}"], 8000); }
-  catch { return { docker: false, container: "missing", starting: starting !== null, error: lastError }; }
+  catch { return { external: false, docker: false, container: "missing", starting: starting !== null, error: lastError }; }
   try {
     const { stdout } = await docker(["inspect", "-f", "{{.State.Running}}", WAHA_CONTAINER]);
-    return { docker: true, container: stdout.trim() === "true" ? "running" : "stopped", starting: starting !== null, error: lastError };
-  } catch { return { docker: true, container: "missing", starting: starting !== null, error: lastError }; }
+    return { external: false, docker: true, container: stdout.trim() === "true" ? "running" : "stopped", starting: starting !== null, error: lastError };
+  } catch { return { external: false, docker: true, container: "missing", starting: starting !== null, error: lastError }; }
 }
 
 /** Starts (creating on first use) the container in the background. The first run downloads the image, which can take minutes. */

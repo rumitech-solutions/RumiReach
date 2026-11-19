@@ -1,0 +1,32 @@
+# One command:  docker compose up -d --build     then open http://localhost:4317
+services:
+  rumireach:
+    build: .
+    image: rumireach:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4317:4317"        # only this computer can open the dashboard
+    shm_size: 1gb                     # Chromium (scraper) needs shared memory
+    environment:
+      WAHA_BASE_URL: http://waha:3000
+      WAHA_ALLOWED_HOSTS: waha
+      WAHA_API_KEY: ${WAHA_API_KEY:-rumireach-local-key}   # WAHA is not published to the host; override in .env if you like
+      RUMIREACH_WAHA_EXTERNAL: "true"
+    volumes:
+      - rumireach-data:/data
+    depends_on:
+      - waha
+
+  waha:
+    image: devlikeapro/waha
+    restart: unless-stopped
+    environment:
+      WAHA_API_KEY: ${WAHA_API_KEY:-rumireach-local-key}
+      WAHA_DASHBOARD_ENABLED: "False"
+      WHATSAPP_SWAGGER_ENABLED: "False"
+    volumes:
+      - waha-sessions:/app/.sessions
+
+volumes:
+  rumireach-data:
+  waha-sessions:

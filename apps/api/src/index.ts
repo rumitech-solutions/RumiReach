@@ -3,6 +3,9 @@ import { Readable } from "node:stream";
 import { randomUUID } from "node:crypto";
 import { db } from "./db";
 import { findFieldConflicts } from "./provenance";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import fastifyStatic from "@fastify/static";
 import { z } from "zod";
 import { serviceState, startService, stopService, wahaKey } from "./waha";
 import { findDuplicates, type DupeRow } from "./dupes";
@@ -14,12 +17,12 @@ import { ensureMatchingSchema } from "./matching";
 
 ensureMatchingSchema();
 const app = Fastify({ logger: true, bodyLimit: Number.MAX_SAFE_INTEGER });
-const HOST = "127.0.0.1";
+const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 4317);
 const WAHA_BASE_URL = (process.env.WAHA_BASE_URL || "http://127.0.0.1:3000").replace(/\/+$/, "");
 const WAHA_SESSION = process.env.WAHA_SESSION || "default";
 function normalizeWhatsAppNumber(value: string) { let digits = value.replace(/\D/g, ""); if (digits.startsWith("00")) digits = digits.slice(2); if (digits.startsWith("0")) digits = "92" + digits.slice(1); else if (digits.length === 10 && digits.startsWith("3")) digits = "92" + digits; return digits.length >= 8 && digits.length <= 15 ? digits : ""; }
-function isLocalWahaUrl() { try { const url = new URL(WAHA_BASE_URL); return ["127.0.0.1","localhost","[::1]"].includes(url.hostname) && ["http:","https:"].includes(url.protocol); } catch { return false; } }
+function isLocalWahaUrl() { try { const url = new URL(WAHA_BASE_URL); return ["127.0.0.1","localhost","[::1]", ...(process.env.WAHA_ALLOWED_HOSTS || "").split(",").map(h => h.trim()).filter(Boolean)].includes(url.hostname) && ["http:","https:"].includes(url.protocol); } catch { return false; } }
 
 app.get("/api/health", async () => ({ ok: true, app: "RumiReach", version: "0.3.0" }));
 
@@ -408,5 +411,9 @@ app.patch("/api/candidates/:id/review", async (request, reply) => {
   if (!result.changes) return reply.code(404).send({ error: "Candidate not found." });
   return { ok: true };
 });
+
+// Production / Docker: serve the built dashboard from the same port as the API.
+const webDir = process.env.RUMIREACH_WEB_DIR || join(__dirname, "..", "..", "web", "dist");
+if (existsSync(join(webDir, "index.html"))) app.register(fastifyStatic, { root: webDir });
 
 app.listen({ host: HOST, port: PORT }).catch(error => { app.log.error(error); process.exit(1); });

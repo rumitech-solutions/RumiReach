@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-type Service = { docker: boolean; container: "missing" | "running" | "stopped"; starting: boolean; error: string; session: string };
+type Service = { external: boolean; docker: boolean; container: "missing" | "running" | "stopped"; starting: boolean; error: string; session: string };
 
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -50,7 +50,7 @@ export default function WhatsAppService({ active, onConnectedChange }: { active:
     else if (service.session === "SCAN_QR_CODE") line = "Scan this QR code: WhatsApp → Linked devices → Link a device.";
     else line = "Service is running; preparing the WhatsApp session… (" + (service.session || "starting") + ")";
   }
-  const canStart = !!service?.docker && !service.starting && service.container !== "running";
+  const canStart = !service?.external && !!service?.docker && !service.starting && service.container !== "running";
 
   return <div className="wa-service">
     <strong>One-click WhatsApp service</strong>
@@ -59,8 +59,8 @@ export default function WhatsAppService({ active, onConnectedChange }: { active:
     {qr && <img className="wa-qr" src={qr} alt="WhatsApp pairing QR code"/>}
     <div className="wa-actions">
       <button className="secondary-button" disabled={!canStart} onClick={() => void act("/api/whatsapp/service/start")}>▶ Start WhatsApp service</button>
-      {service?.container === "running" && <button className="secondary-button" onClick={() => void act("/api/whatsapp/service/stop")}>■ Stop</button>}
+      {service?.container === "running" && !service.external && <button className="secondary-button" onClick={() => void act("/api/whatsapp/service/stop")}>■ Stop</button>}
     </div>
-    <small>Runs the official WAHA image through Docker on this computer only (127.0.0.1) with a private key stored locally. Pairing uses an unofficial WhatsApp Web link, so account restrictions remain possible.</small>
+    <small>{service?.external ? "WhatsApp (WAHA) is managed by Docker Compose alongside RumiReach. " : ""}Runs the official WAHA image through Docker on this computer only (127.0.0.1) with a private key stored locally. Pairing uses an unofficial WhatsApp Web link, so account restrictions remain possible.</small>
   </div>;
 }

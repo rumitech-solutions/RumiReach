@@ -1,0 +1,8 @@
+**/node_modules
+**/dist
+.git
+.github
+docs
+services/gmaps-scraper/bin
+services/gmaps-scraper/img
+*.sqlite*
