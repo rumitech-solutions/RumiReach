@@ -387,18 +387,8 @@ export default function App() {
     const phone = whatsappNumber(candidate.phone_raw || "");
     if (!phone) { setError("This business does not have a usable phone number."); return; }
     const text = makeWhatsAppMessage(whatsappDraft, candidate);
-    if (whatsappImage && typeof navigator.share === "function" && typeof navigator.canShare === "function") {
-      const shareData: ShareData = { title: "RumiTech Solutions", text, files: [whatsappImage] };
-      if (navigator.canShare(shareData)) {
-        try {
-          await navigator.share(shareData);
-          setMessage("Share sheet opened. Choose WhatsApp to share the message with the image.");
-          return;
-        } catch (reason) {
-          if (reason instanceof DOMException && reason.name === "AbortError") return;
-        }
-      }
-    }
+    // Always open the recipient-specific WhatsApp chat. The Web Share API opens
+    // a generic "Send message to" picker and drops the target phone number.
     window.open("https://wa.me/" + phone + "?text=" + encodeURIComponent(text), "_blank", "noopener,noreferrer");
     if (whatsappImage) {
       const imageUrl = URL.createObjectURL(whatsappImage);
@@ -462,7 +452,7 @@ export default function App() {
                 {whatsappImage && <button className="draft-reset image-remove" onClick={() => void clearWhatsappImage()}>Remove</button>}
               </div>
             </div>
-            <p className="image-attachment-help">On supported devices, choose WhatsApp in the share sheet and select the recipient. Otherwise RumiReach opens the selected business chat and downloads the image for manual attachment.</p>
+            <p className="image-attachment-help">RumiReach opens a direct chat with this business and pre-fills your message. The shared image downloads separately; attach it in the chat before sending.</p>
             <div className="draft-footer"><span>Use <code>{'{business_name}'}</code> and <code>{'{category}'}</code> to personalize each message.</span><span className="draft-saved"><i/> Saved in this browser</span></div><details className="waha-settings"><summary><span>Optional integration settings</span><span className="waha-mode">{wahaEnabled ? "WAHA enabled" : "Draft mode · default"}</span></summary><div className="waha-settings-body"><label className="waha-toggle"><input type="checkbox" checked={wahaEnabled} onChange={e => setWahaEnabled(e.target.checked)}/><span><strong>Enable WAHA sending</strong><small>Off by default. When disabled, every WhatsApp button opens your editable draft in WhatsApp.</small></span></label><div className={"waha-status" + (wahaConnected ? " connected" : "")}><span>{wahaConnected ? "●" : "○"}</span> {wahaStatus}</div><WhatsAppService active={wahaEnabled} onConnectedChange={recheckWaha}/><p>Advanced: instead of the button above you can run your own WAHA and set <code>WAHA_BASE_URL</code>, <code>WAHA_SESSION</code> and <code>WAHA_API_KEY</code> in the local API environment. The API key stays server-side. After enabling, contacts still need recorded opt-in consent before the separate WAHA send action is available. The selected shared image is sent with the personalized draft as its caption.</p></div></details>
           </div>
           <div className="filter-bar"><div className="search-box"><span>⌕</span><input value={query} onChange={e => { setQuery(e.target.value); setPage(1); }} placeholder="Search businesses, phone, location…"/></div><select aria-label="Collection filter" value={collection} onChange={e => { setCollection(e.target.value); setPage(1); }}><option value="">All collections</option>{collectionOptions.map(item => <option key={item.id} value={item.id}>{item.name} ({item.count})</option>)}</select><select aria-label="Category filter" value={category} onChange={e => { setCategory(e.target.value); setPage(1); }}><option value="all">All categories</option>{categories.map(value => <option key={value} value={value}>{value}</option>)}</select><select aria-label="Review filter" value={review} onChange={e => { setReview(e.target.value); setPage(1); }}><option value="all">All statuses</option><option value="pending">Pending</option><option value="accepted">Accepted</option><option value="contacted">Contacted</option><option value="needs_review">Needs review</option><option value="rejected">Rejected</option></select><select aria-label="Sort records" value={sort} onChange={e => { setSort(e.target.value); setPage(1); }}><option value="newest">Recently added</option><option value="name">Business name</option><option value="category">Category</option></select></div>
