@@ -30,12 +30,16 @@ const repoRoot = join(__dirname, "..", "..", "..");
 async function cleanupStaleScrapeWorkspaces() {
   try {
     const entries = await readdir(scrapesDir, { withFileTypes: true });
+    const activeRows = db.prepare("SELECT id FROM scrape_runs WHERE status IN ('running','importing')").all() as Array<{ id: string }>;
+    const activeIds = new Set(activeRows.map(row => row.id));
     const cutoff = Date.now() - WORKSPACE_RETENTION_HOURS * 60 * 60 * 1000;
     await Promise.all(entries.filter(entry => entry.isDirectory()).map(async entry => {
       const workspace = join(scrapesDir, entry.name);
       try {
         const info = await stat(workspace);
-        if (info.mtimeMs < cutoff) await rm(workspace, { recursive: true, force: true });
+        if (!activeIds.has(entry.name) && info.mtimeMs < cutoff) {
+          await rm(workspace, { recursive: true, force: true });
+        }
       } catch {
         // Best-effort cleanup: one inaccessible folder must not stop the API.
       }
