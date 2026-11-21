@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { db, dataDir } from "./db";
 import { parseCsv } from "./csv";
@@ -19,7 +19,32 @@ const DOCKER_IMAGE = process.env.RUMIREACH_SCRAPER_IMAGE || "gosom/google-maps-s
 const MAX_RUN_MINUTES = Math.max(1, Number(process.env.RUMIREACH_SCRAPE_MAX_MINUTES) || 120);
 const CONCURRENCY = Math.min(8, Math.max(1, Number(process.env.RUMIREACH_SCRAPE_CONCURRENCY) || 2));
 const scrapesDir = join(dataDir, "scrapes");
+const WORKSPACE_RETENTION_HOURS = Math.max(
+  24,
+  Math.min(24 * 30, Number(process.env.RUMIREACH_SCRAPE_WORKSPACE_RETENTION_HOURS) || 24)
+);
 const repoRoot = join(__dirname, "..", "..", "..");
+
+// Scrape workspaces contain temporary query/result files, not the saved lead database.
+// Remove abandoned workspaces after the retention window; cleanup must never block startup.
+async function cleanupStaleScrapeWorkspaces() {
+  try {
+    const entries = await readdir(scrapesDir, { withFileTypes: true });
+    const cutoff = Date.now() - WORKSPACE_RETENTION_HOURS * 60 * 60 * 1000;
+    await Promise.all(entries.filter(entry => entry.isDirectory()).map(async entry => {
+      const workspace = join(scrapesDir, entry.name);
+      try {
+        const info = await stat(workspace);
+        if (info.mtimeMs < cutoff) await rm(workspace, { recursive: true, force: true });
+      } catch {
+        // Best-effort cleanup: one inaccessible folder must not stop the API.
+      }
+    }));
+  } catch {
+    // The folder may not exist yet; it is created when the first scrape starts.
+  }
+}
+void cleanupStaleScrapeWorkspaces();
 
 export type ScrapeRequest = {
   keywords: string[];
@@ -149,6 +174,14 @@ async function finish(id: string, run: LiveRun, resultsFile: string, queries: st
     .run(final, imported, skipped, duplicates, problem || null, importJobId, new Date().toISOString(), id);
   pushLog(run, final === "completed" ? "Done: " + imported + " new businesses imported (" + duplicates + " already in your directory)." : problem || "Stopped.");
   run.child = undefined;
+
+  // The imported rows and run status are already stored in SQLite; the CSV/query files
+  // are temporary artifacts and can be deleted immediately after the run finishes.
+  try {
+    await rm(join(scrapesDir, id), { recursive: true, force: true });
+  } catch {
+    pushLog(run, "Temporary scrape files could not be removed; startup cleanup will retry later.");
+  }
 }
 
 async function importResults(runId: string, resultsFile: string, queries: string[], meta: { country: string; state?: string; city?: string; name?: string }) {

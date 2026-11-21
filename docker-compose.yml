@@ -4,6 +4,8 @@ services:
     build: .
     image: rumireach:local
     restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
     ports:
       - "127.0.0.1:4317:4317"        # only this computer can open the dashboard
     shm_size: 1gb                     # Chromium (scraper) needs shared memory
@@ -20,6 +22,8 @@ services:
   waha:
     image: devlikeapro/waha
     restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
     environment:
       WAHA_API_KEY: ${WAHA_API_KEY:-rumireach-local-key}
       WAHA_DASHBOARD_ENABLED: "False"

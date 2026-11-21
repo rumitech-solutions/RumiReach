@@ -1,8 +1,37 @@
-**/node_modules
-**/dist
+# Source control and editor metadata
 .git
 .github
-docs
+.vscode
+.idea
+
+# Secrets and local overrides (keep the example file available if added later)
+.env
+.env.*
+!.env.example
+
+# Dependencies and generated build output
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/.vite
+
+# Local app data, databases, exports, and backups
+data
+**/data
+**/*.sqlite*
+**/*.db
+**/exports
+**/backups
+**/logs
+**/tmp
+**/temp
+
+# Local caches and generated scraper binaries
+**/.cache
+**/.playwright
 services/gmaps-scraper/bin
 services/gmaps-scraper/img
-*.sqlite*
+
+# Documentation is not needed inside the runtime image
+docs

@@ -69,7 +69,7 @@ cd RumiReach
 docker compose up -d --build
 ```
 
-Open http://localhost:4317. The first build takes a few minutes (it pulls the upstream Google Maps scraper image, which includes Chromium, and the official WAHA image). Compose starts RumiReach (dashboard + API + scraper) and WAHA together; in the dashboard enable WAHA, scan the QR code, and you are set. Everything is reachable from this computer only. Your data is kept in the `rumireach-data` and `waha-sessions` Docker volumes; 
+Open http://localhost:4317. The first build downloads the upstream Google Maps scraper image (including Chromium/Playwright), installs the browser's runtime libraries, builds the RumiReach app, and pulls the WAHA image. This first download can take a while on a slow connection; later builds reuse Docker's package/build caches. Compose starts RumiReach (dashboard + API + scraper) and WAHA together; in the dashboard enable WAHA, scan the QR code, and you are set. Everything is reachable from this computer only. Your data is kept in the `rumireach-data` and `waha-sessions` Docker volumes; 
 **Updating** (RumiReach, the scraper and WAHA are updated independently of each other):
 
 ```bash
@@ -78,6 +78,22 @@ docker compose pull                        # WAHA (devlikeapro/waha)
 docker compose build --pull                # Google Maps scraper (gosom/google-maps-scraper) + RumiReach
 docker compose up -d
 ```
+
+### Safe Docker cleanup (Windows PowerShell)
+
+From the repository root, run:
+
+```powershell
+.\scripts\docker-clean.ps1
+```
+
+This stops and removes only this Compose project's containers/network and removes dangling images. It does **not** delete the `rumireach-data` or `waha-sessions` volumes. To also clear Docker's build cache (which is shared across projects on this computer), run:
+
+```powershell
+.\scripts\docker-clean.ps1 -PruneBuildCache
+```
+
+Do not use `docker compose down -v` or `docker volume prune` unless you intentionally want to erase persistent RumiReach data and WhatsApp sessions.
 
 The Overview page also has a **Check for updates** button that compares the installed scraper/WAHA versions with their latest GitHub releases and shows the exact command to run (it only looks when you click).
 

@@ -28,17 +28,26 @@ ENV NODE_ENV=production \
     PORT=4317 \
     RUMIREACH_DATA_DIR=/data \
     RUMIREACH_SCRAPER_BIN=/usr/local/bin/google-maps-scraper
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Cache apt indexes and downloaded packages between builds. The cache mounts are not
+# included in the final image and make later rebuilds less network-dependent.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libdbus-1-3 \
     libxkbcommon0 libatspi2.0-0 libx11-6 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxrandr2 \
-    libgbm1 libpango-1.0-0 libcairo2 libasound2 \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    libgbm1 libpango-1.0-0 libcairo2 libasound2
 COPY --from=scraper /opt/browsers /opt/browsers
 COPY --from=scraper /opt/ms-playwright-go /opt/ms-playwright-go
 COPY --from=scraper /usr/bin/google-maps-scraper /usr/local/bin/google-maps-scraper
-RUN chmod -R 755 /opt/browsers /opt/ms-playwright-go
+
+# The upstream scraper image already applies the required permissions to these
+# directories. Preserve those modes instead of recursively chmod-ing thousands
+# of browser/driver files in a second image layer.
 WORKDIR /app
 COPY --from=app-build /app /app
 VOLUME /data
 EXPOSE 4317
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:4317/api/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
 CMD ["node", "apps/api/dist/index.js"]
