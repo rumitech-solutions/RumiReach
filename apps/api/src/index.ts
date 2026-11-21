@@ -303,13 +303,30 @@ app.delete("/api/candidates/:id", async (request, reply) => {
 async function wahaCall(path: string, init: RequestInit = {}) {
   return fetch(WAHA_BASE_URL + path, { ...init, headers: { "X-Api-Key": wahaKey(), "Content-Type": "application/json", Accept: "application/json" }, signal: AbortSignal.timeout(8000) });
 }
+/** When the session first reported STARTING; used to detect a session that never finishes booting. */
+let startingSince: number | null = null;
+let lastAutoReset = 0;
+const STUCK_AFTER_MS = 75_000;
+const AUTO_RESET_COOLDOWN_MS = 5 * 60_000;
+
 async function sessionStatus(): Promise<string> {
   try {
     const response = await wahaCall("/api/sessions?all=true");
     if (!response.ok) return "UNAUTHORIZED";
     const sessions = await response.json() as Array<{ name?: string; status?: string }>;
-    return sessions.find(item => item.name === WAHA_SESSION)?.status || "NOT_FOUND";
+    const status = sessions.find(item => item.name === WAHA_SESSION)?.status || "NOT_FOUND";
+    if (status === "STARTING") startingSince ??= Date.now(); else startingSince = null;
+    return status;
   } catch { return "UNREACHABLE"; }
+}
+const startingSeconds = () => startingSince ? Math.round((Date.now() - startingSince) / 1000) : 0;
+
+/** Deletes a (possibly wedged or stale-engine) session and creates a fresh one so WAHA produces a new QR code. */
+async function resetSession() {
+  await wahaCall("/api/sessions/" + encodeURIComponent(WAHA_SESSION) + "/stop", { method: "POST", body: JSON.stringify({ logout: false }) }).catch(() => undefined);
+  await wahaCall("/api/sessions/" + encodeURIComponent(WAHA_SESSION), { method: "DELETE" }).catch(() => undefined);
+  startingSince = null;
+  await wahaCall("/api/sessions", { method: "POST", body: JSON.stringify({ name: WAHA_SESSION, start: true }) });
 }
 
 // ---- Update check (runs only when the user clicks "Check for updates") ----
@@ -339,7 +356,13 @@ app.get("/api/updates", async () => {
 app.get("/api/whatsapp/service", async () => {
   const state = await serviceState();
   const session = state.container === "running" && wahaKey() && isLocalWahaUrl() ? await sessionStatus() : "";
-  return { ...state, session, localOnly: isLocalWahaUrl() };
+  // A session that sits in STARTING for over a minute is wedged (typically a stale browser-engine session): rebuild it once, automatically.
+  let autoRecovering = false;
+  if (session === "STARTING" && startingSeconds() * 1000 > STUCK_AFTER_MS && Date.now() - lastAutoReset > AUTO_RESET_COOLDOWN_MS) {
+    lastAutoReset = Date.now(); autoRecovering = true;
+    void resetSession().catch(() => undefined);
+  }
+  return { ...state, session, localOnly: isLocalWahaUrl(), startingSeconds: startingSeconds(), stuck: session === "STARTING" && startingSeconds() * 1000 > STUCK_AFTER_MS, autoRecovering };
 });
 app.post("/api/whatsapp/service/start", async (_request, reply) => {
   if (!isLocalWahaUrl()) return reply.code(400).send({ error: "WAHA_BASE_URL points outside this computer; start that WAHA yourself." });
@@ -358,6 +381,12 @@ app.post("/api/whatsapp/session/start", async (_request, reply) => {
     return { status: await sessionStatus() };
   } catch { return reply.code(502).send({ error: "Cannot reach WAHA yet. Wait a few seconds and try again." }); }
 });
+// Rebuild the WhatsApp session from scratch (fixes a session stuck in STARTING). Pairing is needed again afterwards.
+app.post("/api/whatsapp/session/reset", async (_request, reply) => {
+  if (!wahaKey() || !isLocalWahaUrl()) return reply.code(503).send({ error: "Start the WhatsApp service first." });
+  try { await resetSession(); return { status: await sessionStatus() }; }
+  catch { return reply.code(502).send({ error: "Cannot reach WAHA yet. Wait a few seconds and try again." }); }
+});
 app.get("/api/whatsapp/qr", async (_request, reply) => {
   if (!wahaKey() || !isLocalWahaUrl()) return reply.code(503).send({ error: "Start the WhatsApp service first." });
   try {
@@ -369,9 +398,19 @@ app.get("/api/whatsapp/qr", async (_request, reply) => {
   } catch { return reply.code(502).send({ error: "Cannot reach WAHA." }); }
 });
 
+function waStatusMessage(status?: string) {
+  switch (status) {
+    case "WORKING": return "WhatsApp session is connected.";
+    case "SCAN_QR_CODE": return "Scan the QR code below with WhatsApp → Linked devices to connect.";
+    case "STARTING": return "WhatsApp session is starting… this usually takes under a minute.";
+    case "FAILED": return "WhatsApp session failed. Use “Reset session” below.";
+    case "STOPPED": return "WhatsApp session is stopped. It will be started automatically.";
+    default: return "WhatsApp is not paired yet. Open the One-click WhatsApp service below to start and scan the QR code.";
+  }
+}
 app.get("/api/whatsapp/status", async () => {
   if (!wahaKey() || !isLocalWahaUrl()) return { configured: false, connected: false, message: "Start the WhatsApp service from the integration settings." };
-  try { const response = await fetch(WAHA_BASE_URL + "/api/sessions", { headers: { "X-Api-Key": wahaKey() }, signal: AbortSignal.timeout(5000) }); if (!response.ok) return { configured: true, connected: false, message: "WAHA rejected the API request." }; const sessions = await response.json() as Array<{ name?: string; status?: string }>; const session = sessions.find(item => item.name === WAHA_SESSION); return { configured: true, connected: session?.status === "WORKING", session: WAHA_SESSION, sessionStatus: session?.status || "NOT_FOUND", message: session?.status === "WORKING" ? "WhatsApp session is connected." : "Pair/start the WAHA session using its QR dashboard." }; } catch { return { configured: true, connected: false, message: "Cannot reach WAHA. Start the service and try again." }; }
+  try { const response = await fetch(WAHA_BASE_URL + "/api/sessions", { headers: { "X-Api-Key": wahaKey() }, signal: AbortSignal.timeout(5000) }); if (!response.ok) return { configured: true, connected: false, message: "WAHA rejected the API request." }; const sessions = await response.json() as Array<{ name?: string; status?: string }>; const session = sessions.find(item => item.name === WAHA_SESSION); return { configured: true, connected: session?.status === "WORKING", session: WAHA_SESSION, sessionStatus: session?.status || "NOT_FOUND", message: waStatusMessage(session?.status) }; } catch { return { configured: true, connected: false, message: "Cannot reach WAHA. Start the service and try again." }; }
 });
 app.patch("/api/candidates/:id/whatsapp-consent", async (request, reply) => {
   const { id } = request.params as { id: string }; const body = request.body as { status?: string; evidence?: string; method?: string };

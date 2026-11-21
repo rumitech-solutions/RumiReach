@@ -24,8 +24,11 @@ services:
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
+    shm_size: 1gb                     # only matters if you switch to the WEBJS (Chromium) engine
     environment:
       WAHA_API_KEY: ${WAHA_API_KEY:-rumireach-local-key}
+      # NOWEB = no Chromium: starts in seconds and does not get stuck in STARTING. Set WAHA_ENGINE=WEBJS in .env to go back.
+      WHATSAPP_DEFAULT_ENGINE: ${WAHA_ENGINE:-NOWEB}
       WAHA_DASHBOARD_ENABLED: "False"
       WHATSAPP_SWAGGER_ENABLED: "False"
     volumes:

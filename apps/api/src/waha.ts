@@ -13,7 +13,8 @@ import { dataDir } from "./db";
 const run = promisify(execFile);
 export const WAHA_CONTAINER = "rumireach-waha";
 const IMAGE = process.env.RUMIREACH_WAHA_IMAGE || "devlikeapro/waha";
-const ENGINE = process.env.RUMIREACH_WAHA_ENGINE || "";
+/** NOWEB talks to WhatsApp directly (no Chromium): boots in seconds and never hangs in STARTING the way the browser engine can. */
+const ENGINE = process.env.RUMIREACH_WAHA_ENGINE || "NOWEB";
 const keyFile = join(dataDir, "waha.json");
 const sessionsDir = join(dataDir, "waha-sessions");
 
@@ -33,6 +34,7 @@ function ensureKey(): string {
 /** Pure: arguments for `docker run`. Publishes on 127.0.0.1 only and disables the public dashboard/swagger. */
 export function buildRunArgs(apiKey: string, sessions: string, image = IMAGE, engine = ENGINE): string[] {
   const args = ["run", "-d", "--name", WAHA_CONTAINER, "--restart", "unless-stopped",
+    "--shm-size", "1g",
     "-p", "127.0.0.1:3000:3000",
     "-e", "WAHA_API_KEY=" + apiKey,
     "-e", "WAHA_DASHBOARD_ENABLED=False",

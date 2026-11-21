@@ -10,4 +10,6 @@ test("docker run publishes on localhost only and disables public dashboards", ()
   assert.equal(args.at(-1), "devlikeapro/waha");
   assert.ok(!args.some(arg => arg.startsWith("WHATSAPP_DEFAULT_ENGINE")));
   assert.ok(buildRunArgs("k", "/s", "img", "NOWEB").includes("WHATSAPP_DEFAULT_ENGINE=NOWEB"));
+  assert.ok(buildRunArgs("k", "/s", "img", "WEBJS").includes("WHATSAPP_DEFAULT_ENGINE=WEBJS"));
+  assert.ok(args.includes("--shm-size"));
 });

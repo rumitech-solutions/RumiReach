@@ -114,3 +114,10 @@ SQLite data is stored under `%LOCALAPPDATA%\\RumiReach\\data` on Windows by defa
 ## License
 
 No repository license has been selected. Until one is added, all rights are reserved; do not assume this project is open source.
+
+## Troubleshooting: WhatsApp stays on "STARTING"
+
+RumiReach now runs WAHA with the lightweight `NOWEB` engine by default (no Chromium), so the session normally reaches the QR step in seconds. If an older session is stuck, the dashboard rebuilds it automatically after about 75 seconds, or you can press **↻ Reset session** in the WhatsApp service panel (you will need to scan the QR code again).
+
+After pulling this change run `docker compose up -d` so the WAHA container picks up the new engine setting. To go back to the browser engine set `WAHA_ENGINE=WEBJS` in `.env`. If you still see problems, check `docker compose logs waha`.
+

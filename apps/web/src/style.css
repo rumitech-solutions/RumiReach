@@ -78,3 +78,7 @@
 .update-row small{display:block;font:400 9px 'DM Sans';color:#8093a5;margin-top:3px}.update-row strong{font:700 12px 'DM Sans';color:#e6f0ed}
 .update-row.u-update{border-color:#e3b34160}.u-update .find-badge{background:#3a3016;color:#f5d98a}.u-current .find-badge{background:#1d3a2c;color:#8fe0a8}
 .update-how{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;align-items:center}.update-how code{flex:1 1 260px;padding:8px 10px;border-radius:7px;background:#0b151b;color:#9de3d3;font:10px ui-monospace,monospace;overflow-wrap:anywhere}.update-how a{text-decoration:none}
+.wa-steps{display:flex;gap:6px;list-style:none;margin:0;padding:0;flex-wrap:wrap}.wa-steps li{display:flex;align-items:center;gap:6px;padding:4px 10px 4px 5px;border:1px solid #ffffff14;border-radius:999px;font-size:10px;color:#718398}.wa-steps i{display:grid;place-items:center;width:16px;height:16px;border-radius:50%;background:#ffffff10;font-style:normal;font-size:9px}.wa-steps li.current{color:#79ddc7;border-color:#79ddc760;background:#79ddc712}.wa-steps li.current i{background:#79ddc7;color:#0b1418}.wa-steps li.done{color:#9fb4c5}.wa-steps li.done i{background:#2f6f5f;color:#d8fff4}
+.waha-status.warn{border-color:#a5493f;background:#2a1a1a;color:#f0a59d}.wa-pulse{animation:wa-pulse 1.2s ease-in-out infinite}@keyframes wa-pulse{0%,100%{opacity:.25}50%{opacity:1}}.secondary-button.attention{border-color:#e5c78c;color:#e5c78c}
+@media (prefers-reduced-motion:reduce){.wa-pulse{animation:none}}
+
