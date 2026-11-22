@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { confirmDialog } from "./ui";
 
 type Collection = { id: string; name: string; type: "search" | "csv"; place: string; status: string; createdAt: string; count: number; accepted: number };
 
@@ -31,7 +32,7 @@ export default function Collections({ active, onOpen, onChanged }: { active: boo
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not rename."); }
   }
   async function remove(item: Collection) {
-    if (!window.confirm("Delete “" + item.name + "” and its " + item.count + " businesses? This cannot be undone.")) return;
+    if (!await confirmDialog({ title: "Delete “" + item.name + "”?", body: "This also deletes its " + item.count.toLocaleString() + " businesses. It cannot be undone.", confirmLabel: "Delete collection", danger: true })) return;
     try { await call("/api/collections/" + item.id, { method: "DELETE" }); await load(); onChanged(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Could not delete."); }
   }
@@ -39,7 +40,7 @@ export default function Collections({ active, onOpen, onChanged }: { active: boo
   async function merge(item: Collection, intoId: string) {
     const target = items.find(other => other.id === intoId);
     if (!target) return;
-    if (!window.confirm("Move all " + item.count + " businesses from “" + item.name + "” into “" + target.name + "”? The empty “" + item.name + "” list will be removed.")) return;
+    if (!await confirmDialog({ title: "Merge into “" + target.name + "”?", body: "All " + item.count.toLocaleString() + " businesses from “" + item.name + "” move over and the empty “" + item.name + "” list is removed.", confirmLabel: "Merge" })) return;
     try { await call("/api/collections/" + item.id + "/merge", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ into: intoId }) }); await load(); onChanged(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Could not merge."); }
   }

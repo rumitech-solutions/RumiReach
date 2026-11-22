@@ -11,9 +11,9 @@ export function personalize(template: string, name: string | null, category: str
   return template.replace(/\\n/g, "\n").replace(/\{business_name\}/gi, name || "there").replace(/\{category\}/gi, category || "your business").trim();
 }
 
-/** Base gap plus up to 50% random jitter so sends are not on a rigid clock. */
-export function sendDelayMs(gapSeconds: number, random = Math.random()): number {
-  return Math.round(gapSeconds * 1000 * (1 + 0.5 * random));
+/** The pause between messages: the chosen gap, optionally stretched by up to `jitter` (0.25 = 25%) so sends are not on a rigid clock. */
+export function sendDelayMs(gapSeconds: number, random = Math.random(), jitter = 0.5): number {
+  return Math.round(gapSeconds * 1000 * (1 + jitter * random));
 }
 
 export function createJob(id: string, items: Array<{ id: string; name: string }>): SendJob {

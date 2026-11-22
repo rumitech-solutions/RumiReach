@@ -29,10 +29,9 @@ function isLocalWahaUrl() { try { const url = new URL(WAHA_BASE_URL); return ["1
 
 app.get("/api/health", async () => ({ ok: true, app: "RumiReach", version: "0.3.0" }));
 
-app.get("/api/candidates", async (request) => {
-  const q = request.query as { page?: string; pageSize?: string; search?: string; category?: string; status?: string; sort?: string; collection?: string; has?: string };
-  const page = Math.max(1, Math.floor(Number(q.page) || 1));
-  const pageSize = Math.min(100, Math.max(10, Math.floor(Number(q.pageSize) || 25)));
+type CandidateQuery = { page?: string; pageSize?: string; search?: string; category?: string; status?: string; sort?: string; collection?: string; has?: string };
+/** WHERE clause shared by the directory list and "select all matching". */
+function candidateFilter(q: CandidateQuery) {
   const search = (q.search || "").trim().slice(0, 200);
   const category = (q.category || "").trim().slice(0, 100);
   const status = ["pending", "accepted", "contacted", "rejected", "needs_review"].includes(q.status || "") ? q.status! : "";
@@ -47,7 +46,20 @@ app.get("/api/candidates", async (request) => {
   if (q.collection) { where.push("job_id = ?"); params.push(q.collection.slice(0, 64)); }
   where.push(...contactFilterClauses(q.has));
   if (status) { where.push("review_status = ?"); params.push(status); }
-  const clause = where.join(" AND ");
+  return { clause: where.join(" AND "), params };
+}
+
+app.get("/api/candidates/ids", async (request) => {
+  const { clause, params } = candidateFilter(request.query as CandidateQuery);
+  const rows = db.prepare("SELECT id FROM candidates WHERE " + clause + " ORDER BY observed_at DESC LIMIT 5000").all(...params) as Array<{ id: string }>;
+  return { ids: rows.map(row => row.id), capped: rows.length === 5000 };
+});
+
+app.get("/api/candidates", async (request) => {
+  const q = request.query as CandidateQuery;
+  const page = Math.max(1, Math.floor(Number(q.page) || 1));
+  const pageSize = Math.min(100, Math.max(10, Math.floor(Number(q.pageSize) || 25)));
+  const { clause, params } = candidateFilter(q);
   const total = (db.prepare("SELECT COUNT(*) AS count FROM candidates WHERE " + clause).get(...params) as { count: number }).count;
   const order = q.sort === "name" ? "name COLLATE NOCASE ASC" : q.sort === "category" ? "category COLLATE NOCASE ASC" : "observed_at DESC";
   const items = db.prepare("SELECT c.id,c.job_id,c.source_object_type,c.source_object_id,c.name,c.category,c.address,c.phone_raw,c.website_url,c.public_email,c.source_url,c.observed_at,c.review_status FROM candidates c WHERE " + clause + " ORDER BY " + order + " LIMIT ? OFFSET ?").all(...params, pageSize, (page - 1) * pageSize);
@@ -434,9 +446,11 @@ let cancelRequested = false;
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 app.post("/api/whatsapp/send", async (request, reply) => {
-  const body = request.body as { ids?: string[]; template?: string; image?: { data?: string; mimetype?: string; filename?: string } };
+  const body = request.body as { ids?: string[]; template?: string; gapSeconds?: number; vary?: boolean; image?: { data?: string; mimetype?: string; filename?: string } };
   const ids = Array.isArray(body?.ids) ? [...new Set(body.ids.filter(id => typeof id === "string"))] : [];
   const template = (body?.template || "").trim();
+  const gapSeconds = Math.min(3600, Math.max(1, Number(body?.gapSeconds) || SEND_GAP_SECONDS));
+  const jitter = body?.vary === false ? 0 : 0.25;
   if (!ids.length) return reply.code(400).send({ error: "Select at least one business." });
   if (ids.length > 500) return reply.code(400).send({ error: "Send to at most 500 businesses at a time." });
   if (!template || template.length > 4096) return reply.code(400).send({ error: "Message must contain 1–4096 characters." });
@@ -471,7 +485,7 @@ app.post("/api/whatsapp/send", async (request, reply) => {
       logSend.run(randomUUID(), item.id, phone, result.id || null, "sent", null, now.toISOString()); markContacted.run(item.id);
       return { status: "sent" };
     } catch { return { status: "failed", note: "Could not reach WhatsApp service" }; }
-  }, { gapMs: () => sendDelayMs(SEND_GAP_SECONDS), sleep, cancelled: () => cancelRequested }).catch(() => { job.state = "done"; });
+  }, { gapMs: () => sendDelayMs(gapSeconds, Math.random(), jitter), sleep, cancelled: () => cancelRequested }).catch(() => { job.state = "done"; });
   return reply.code(202).send(job);
 });
 app.get("/api/whatsapp/send/current", async () => ({ job: currentJob, gapSeconds: SEND_GAP_SECONDS }));
