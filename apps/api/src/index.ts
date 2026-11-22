@@ -8,6 +8,7 @@ import { join } from "node:path";
 import fastifyStatic from "@fastify/static";
 import { z } from "zod";
 import { binaryVersion, latestRelease, updateStatus } from "./updates";
+import { createJob, personalize, runJob, sendDelayMs, type SendJob } from "./sendjob";
 import { serviceState, startService, stopService, wahaKey } from "./waha";
 import { findDuplicates, type DupeRow } from "./dupes";
 import { parseCsv } from "./csv";
@@ -49,7 +50,7 @@ app.get("/api/candidates", async (request) => {
   const clause = where.join(" AND ");
   const total = (db.prepare("SELECT COUNT(*) AS count FROM candidates WHERE " + clause).get(...params) as { count: number }).count;
   const order = q.sort === "name" ? "name COLLATE NOCASE ASC" : q.sort === "category" ? "category COLLATE NOCASE ASC" : "observed_at DESC";
-  const items = db.prepare("SELECT c.id,c.job_id,c.source_object_type,c.source_object_id,c.name,c.category,c.address,c.phone_raw,c.website_url,c.public_email,c.source_url,c.observed_at,c.review_status,COALESCE(w.status, 'not_confirmed') AS whatsapp_consent_status,w.consent_at AS whatsapp_consent_at FROM candidates c LEFT JOIN whatsapp_consents w ON w.candidate_id=c.id WHERE " + clause + " ORDER BY " + order + " LIMIT ? OFFSET ?").all(...params, pageSize, (page - 1) * pageSize);
+  const items = db.prepare("SELECT c.id,c.job_id,c.source_object_type,c.source_object_id,c.name,c.category,c.address,c.phone_raw,c.website_url,c.public_email,c.source_url,c.observed_at,c.review_status FROM candidates c WHERE " + clause + " ORDER BY " + order + " LIMIT ? OFFSET ?").all(...params, pageSize, (page - 1) * pageSize);
   const categories = db.prepare("SELECT DISTINCT category FROM candidates WHERE source_id = ? AND category IS NOT NULL ORDER BY category COLLATE NOCASE").all(IMPORT_SOURCE) as Array<{ category: string }>;
   const stats = db.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN review_status='accepted' THEN 1 ELSE 0 END) AS accepted, SUM(CASE WHEN review_status='pending' THEN 1 ELSE 0 END) AS pending, SUM(CASE WHEN phone_raw IS NOT NULL AND phone_raw != '' THEN 1 ELSE 0 END) AS withPhone, SUM(CASE WHEN website_url IS NOT NULL AND website_url != '' THEN 1 ELSE 0 END) AS withWebsite FROM candidates WHERE source_id = ?").get(IMPORT_SOURCE);
   return { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize), categories: categories.map(x => x.category), stats };
@@ -412,54 +413,75 @@ app.get("/api/whatsapp/status", async () => {
   if (!wahaKey() || !isLocalWahaUrl()) return { configured: false, connected: false, message: "Start the WhatsApp service from the integration settings." };
   try { const response = await fetch(WAHA_BASE_URL + "/api/sessions", { headers: { "X-Api-Key": wahaKey() }, signal: AbortSignal.timeout(5000) }); if (!response.ok) return { configured: true, connected: false, message: "WAHA rejected the API request." }; const sessions = await response.json() as Array<{ name?: string; status?: string }>; const session = sessions.find(item => item.name === WAHA_SESSION); return { configured: true, connected: session?.status === "WORKING", session: WAHA_SESSION, sessionStatus: session?.status || "NOT_FOUND", message: waStatusMessage(session?.status) }; } catch { return { configured: true, connected: false, message: "Cannot reach WAHA. Start the service and try again." }; }
 });
-app.patch("/api/candidates/:id/whatsapp-consent", async (request, reply) => {
-  const { id } = request.params as { id: string }; const body = request.body as { status?: string; evidence?: string; method?: string };
-  if (!["opted_in", "opted_out"].includes(body?.status || "")) return reply.code(400).send({ error: "Consent status must be opted_in or opted_out." });
-  const candidate = db.prepare("SELECT id,phone_raw FROM candidates WHERE id=? AND source_id=?").get(id, IMPORT_SOURCE) as { id: string; phone_raw: string | null } | undefined;
-  if (!candidate) return reply.code(404).send({ error: "Candidate not found." }); const phone = normalizeWhatsAppNumber(candidate.phone_raw || ""); if (!phone) return reply.code(400).send({ error: "A valid phone number is required." });
-  const evidence = (body.evidence || "").trim().slice(0, 500); if (body.status === "opted_in" && evidence.length < 5) return reply.code(400).send({ error: "Record how and when the contact gave permission (at least 5 characters)." });
-  const now = new Date().toISOString(); db.prepare("INSERT INTO whatsapp_consents (candidate_id,phone_e164,status,consent_method,consent_evidence,consent_at,updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(candidate_id) DO UPDATE SET phone_e164=excluded.phone_e164,status=excluded.status,consent_method=excluded.consent_method,consent_evidence=excluded.consent_evidence,consent_at=excluded.consent_at,updated_at=excluded.updated_at").run(id, phone, body.status, (body.method || "operator_attestation").slice(0, 50), body.status === "opted_in" ? evidence : null, now, now); return { ok: true, status: body.status, phone, consentAt: now };
+// ---- WhatsApp sending via WAHA: select businesses, press one button, a queue sends them one by one ----
+const SEND_GAP_SECONDS = Math.max(5, Number(process.env.RUMIREACH_SEND_GAP_SECONDS) || 20);
+const DAILY_SEND_LIMIT = Math.max(1, Number(process.env.RUMIREACH_DAILY_SEND_LIMIT) || 50);
+type OutreachImage = { mimetype: string; filename: string; data: string };
+function parseOutreachImage(input: { data?: string; mimetype?: string; filename?: string } | undefined): { image?: OutreachImage; error?: string; code?: number } {
+  if (!input) return {};
+  const mimetype = input.mimetype || "";
+  const data = (input.data || "").replace(/\s/g, "");
+  if (!["image/jpeg", "image/png", "image/webp"].includes(mimetype) || !data || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data)) return { error: "Image must be a valid JPG, PNG or WebP file.", code: 400 };
+  const bytes = Buffer.from(data, "base64");
+  if (bytes.length < 1 || bytes.length > 5 * 1024 * 1024) return { error: "Image must be 5 MB or smaller.", code: 413 };
+  const isJpeg = mimetype === "image/jpeg" && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  const isPng = mimetype === "image/png" && bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
+  const isWebp = mimetype === "image/webp" && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP";
+  if (!isJpeg && !isPng && !isWebp) return { error: "Image content does not match its declared file type.", code: 400 };
+  return { image: { mimetype, data, filename: (input.filename || "rumireach-outreach-image").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100) || "rumireach-outreach-image" } };
+}
+
+let currentJob: SendJob | null = null;
+let cancelRequested = false;
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+app.post("/api/whatsapp/send", async (request, reply) => {
+  const body = request.body as { ids?: string[]; template?: string; image?: { data?: string; mimetype?: string; filename?: string } };
+  const ids = Array.isArray(body?.ids) ? [...new Set(body.ids.filter(id => typeof id === "string"))] : [];
+  const template = (body?.template || "").trim();
+  if (!ids.length) return reply.code(400).send({ error: "Select at least one business." });
+  if (ids.length > 500) return reply.code(400).send({ error: "Send to at most 500 businesses at a time." });
+  if (!template || template.length > 4096) return reply.code(400).send({ error: "Message must contain 1–4096 characters." });
+  if (currentJob?.state === "running") return reply.code(409).send({ error: "A send is already running. Wait for it to finish or cancel it." });
+  if (!wahaKey() || !isLocalWahaUrl()) return reply.code(503).send({ error: "WhatsApp is not set up. Start the WhatsApp service in the integration settings." });
+  if (await sessionStatus() !== "WORKING") return reply.code(409).send({ error: "WhatsApp is not connected. Scan the QR code in the integration settings first." });
+  const parsed = parseOutreachImage(body.image); if (parsed.error) return reply.code(parsed.code || 400).send({ error: parsed.error });
+  const image = parsed.image;
+
+  type Row = { id: string; name: string | null; category: string | null; phone_raw: string | null };
+  const lookup = db.prepare("SELECT id,name,category,phone_raw FROM candidates WHERE id=? AND source_id=?");
+  const rows = new Map<string, Row>();
+  for (const id of ids) { const row = lookup.get(id, IMPORT_SOURCE) as Row | undefined; if (row) rows.set(id, row); }
+  if (!rows.size) return reply.code(404).send({ error: "None of the selected businesses were found." });
+
+  const job = createJob(randomUUID(), [...rows.values()].map(row => ({ id: row.id, name: row.name || "Unnamed business" })));
+  currentJob = job; cancelRequested = false;
+  const countSentToday = db.prepare("SELECT COUNT(*) AS count FROM whatsapp_send_log WHERE status='sent' AND sent_at>=?");
+  const sentRecently = db.prepare("SELECT 1 FROM whatsapp_send_log WHERE candidate_id=? AND status='sent' AND sent_at>=? LIMIT 1");
+  const logSend = db.prepare("INSERT INTO whatsapp_send_log (id,candidate_id,phone_e164,provider_message_id,status,error_message,sent_at) VALUES (?,?,?,?,?,?,?)");
+  const markContacted = db.prepare("UPDATE candidates SET review_status='contacted' WHERE id=?");
+
+  void runJob(job, async item => {
+    const row = rows.get(item.id)!;
+    const phone = normalizeWhatsAppNumber(row.phone_raw || "");
+    if (!phone) return { status: "skipped", note: "No usable phone number" };
+    const now = new Date(); const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
+    if (sentRecently.get(item.id, new Date(now.getTime() - 86_400_000).toISOString())) return { status: "skipped", note: "Already messaged in the last 24 hours" };
+    if ((countSentToday.get(dayStart.toISOString()) as { count: number }).count >= DAILY_SEND_LIMIT) return { status: "skipped", note: "Daily limit of " + DAILY_SEND_LIMIT + " messages reached", stop: true };
+    const text = personalize(template, row.name, row.category);
+    try {
+      const payload = image ? { session: WAHA_SESSION, chatId: phone + "@c.us", file: image, caption: text } : { session: WAHA_SESSION, chatId: phone + "@c.us", text };
+      const response = await fetch(WAHA_BASE_URL + (image ? "/api/sendImage" : "/api/sendText"), { method: "POST", headers: { "X-Api-Key": wahaKey(), "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(30000) });
+      const result = await response.json().catch(() => ({})) as { id?: string; message?: string; error?: string };
+      if (!response.ok) { const note = String(result.message || result.error || "WAHA rejected the message").slice(0, 200); logSend.run(randomUUID(), item.id, phone, null, "failed", note, now.toISOString()); return { status: "failed", note }; }
+      logSend.run(randomUUID(), item.id, phone, result.id || null, "sent", null, now.toISOString()); markContacted.run(item.id);
+      return { status: "sent" };
+    } catch { return { status: "failed", note: "Could not reach WhatsApp service" }; }
+  }, { gapMs: () => sendDelayMs(SEND_GAP_SECONDS), sleep, cancelled: () => cancelRequested }).catch(() => { job.state = "done"; });
+  return reply.code(202).send(job);
 });
-app.post("/api/candidates/:id/whatsapp-send", async (request, reply) => {
-  const { id } = request.params as { id: string };
-  const body = request.body as { message?: string; image?: { data?: string; mimetype?: string; filename?: string } };
-  const message = (body?.message || "").trim();
-  if (!message || message.length > 4096) return reply.code(400).send({ error: "Message must contain 1–4096 characters." });
-  let imagePayload: { mimetype: string; filename: string; data: string } | null = null;
-  if (body?.image) {
-    const mimetype = body.image.mimetype || "";
-    const data = (body.image.data || "").replace(/\s/g, "");
-    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
-    if (!allowedTypes.includes(mimetype) || !data || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data)) {
-      return reply.code(400).send({ error: "Image must be a valid JPG, PNG or WebP file." });
-    }
-    const bytes = Buffer.from(data, "base64");
-    if (bytes.length < 1 || bytes.length > 5 * 1024 * 1024) return reply.code(413).send({ error: "Image must be 5 MB or smaller." });
-    const isJpeg = mimetype === "image/jpeg" && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-    const isPng = mimetype === "image/png" && bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
-    const isWebp = mimetype === "image/webp" && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP";
-    if (!isJpeg && !isPng && !isWebp) return reply.code(400).send({ error: "Image content does not match its declared file type." });
-    const filename = (body.image.filename || "rumireach-outreach-image").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100) || "rumireach-outreach-image";
-    imagePayload = { mimetype, filename, data };
-  }
-  if (!wahaKey() || !isLocalWahaUrl()) return reply.code(503).send({ error: "WAHA is not configured. Start the WhatsApp service in the integration settings." });
-  const candidate = db.prepare("SELECT id,phone_raw FROM candidates WHERE id=? AND source_id=?").get(id, IMPORT_SOURCE) as { id: string; phone_raw: string | null } | undefined; if (!candidate) return reply.code(404).send({ error: "Candidate not found." });
-  const phone = normalizeWhatsAppNumber(candidate.phone_raw || ""); const consent = db.prepare("SELECT phone_e164,status,consent_evidence FROM whatsapp_consents WHERE candidate_id=?").get(id) as { phone_e164: string; status: string; consent_evidence: string | null } | undefined;
-  if (!consent || consent.status !== "opted_in" || !consent.consent_evidence) return reply.code(403).send({ error: "Explicit opt-in evidence is required. Sending blocked." }); if (!phone || phone !== consent.phone_e164) return reply.code(409).send({ error: "Phone changed since consent. Reconfirm consent for this number." });
-  const now = new Date(), dayStart = new Date(now); dayStart.setHours(0,0,0,0); const sentToday = (db.prepare("SELECT COUNT(*) AS count FROM whatsapp_send_log WHERE status=\"sent\" AND sent_at>=?").get(dayStart.toISOString()) as { count: number }).count;
-  if (sentToday >= 20) return reply.code(429).send({ error: "Local safety ceiling reached: 20 sends per day." }); const lastSend = db.prepare("SELECT sent_at FROM whatsapp_send_log WHERE status=\"sent\" ORDER BY sent_at DESC LIMIT 1").get() as { sent_at: string } | undefined;
-  if (lastSend && now.getTime() - Date.parse(lastSend.sent_at) < 30000) return reply.code(429).send({ error: "Wait at least 30 seconds between messages." }); const duplicate = db.prepare("SELECT id FROM whatsapp_send_log WHERE candidate_id=? AND status=\"sent\" AND sent_at>=? LIMIT 1").get(id, new Date(now.getTime()-86400000).toISOString()); if (duplicate) return reply.code(409).send({ error: "A message was already sent to this contact in the last 24 hours." });
-  try {
-    const endpoint = imagePayload ? "/api/sendImage" : "/api/sendText";
-    const payload = imagePayload
-      ? { session: WAHA_SESSION, chatId: phone + "@c.us", file: imagePayload, caption: message }
-      : { session: WAHA_SESSION, chatId: phone + "@c.us", text: message };
-    const response = await fetch(WAHA_BASE_URL + endpoint, { method: "POST", headers: { "X-Api-Key": wahaKey(), "Content-Type": "application/json", "Accept": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(30000) });
-    const result = await response.json().catch(() => ({})) as { id?: string; message?: string; error?: string };
-    if (!response.ok) { db.prepare("INSERT INTO whatsapp_send_log (id,candidate_id,phone_e164,status,error_message,sent_at) VALUES (?,?,?,?,?,?)").run(randomUUID(), id, phone, "failed", String(result.message || result.error || "WAHA request failed").slice(0,500), now.toISOString()); return reply.code(502).send({ error: "WAHA could not send the message. Check the WAHA session." }); }
-    db.prepare("INSERT INTO whatsapp_send_log (id,candidate_id,phone_e164,provider_message_id,status,sent_at) VALUES (?,?,?,?,?,?)").run(randomUUID(), id, phone, result.id || null, "sent", now.toISOString()); return { ok: true, status: "sent", providerMessageId: result.id || null, sentAt: now.toISOString() };
-  } catch { return reply.code(502).send({ error: "Could not reach WAHA. No successful send was recorded." }); }
-});
+app.get("/api/whatsapp/send/current", async () => ({ job: currentJob, gapSeconds: SEND_GAP_SECONDS, dailyLimit: DAILY_SEND_LIMIT }));
+app.post("/api/whatsapp/send/cancel", async () => { cancelRequested = true; return { ok: true }; });
 app.get("/api/profiles", async () => db.prepare("SELECT p.id,p.canonical_name,p.category,p.address,p.phone_raw,p.website_url,p.public_email,p.created_at,p.updated_at,COUNT(s.candidate_id) AS source_count FROM business_profiles p LEFT JOIN business_profile_sources s ON s.profile_id=p.id GROUP BY p.id ORDER BY p.updated_at DESC LIMIT 500").all());
 app.get("/api/candidates/:id/provenance", async (request, reply) => {
   const params = request.params as { id: string };

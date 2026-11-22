@@ -29,8 +29,6 @@ db.prepare("INSERT OR IGNORE INTO sources (id,name,terms_url,attribution,enabled
   "© OpenStreetMap contributors — data available under the Open Database License (ODbL)", 1, "2026-11-17"
 );
 
-db.exec("CREATE TABLE IF NOT EXISTS whatsapp_consents (candidate_id TEXT PRIMARY KEY REFERENCES candidates(id) ON DELETE CASCADE, phone_e164 TEXT NOT NULL, status TEXT NOT NULL, consent_method TEXT, consent_evidence TEXT, consent_at TEXT NOT NULL, updated_at TEXT NOT NULL);");
-db.exec("CREATE INDEX IF NOT EXISTS idx_whatsapp_consents_status ON whatsapp_consents(status, updated_at);");
 db.exec("CREATE TABLE IF NOT EXISTS whatsapp_send_log (id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE, phone_e164 TEXT NOT NULL, provider_message_id TEXT, status TEXT NOT NULL, error_message TEXT, sent_at TEXT NOT NULL);");
 db.exec("CREATE INDEX IF NOT EXISTS idx_whatsapp_send_log_sent_at ON whatsapp_send_log(sent_at);");
 db.exec("CREATE TABLE IF NOT EXISTS geocode_cache (query_key TEXT PRIMARY KEY, result_json TEXT NOT NULL, cached_at TEXT NOT NULL);");
