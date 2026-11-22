@@ -8,6 +8,7 @@ import { join } from "node:path";
 import fastifyStatic from "@fastify/static";
 import { z } from "zod";
 import { binaryVersion, latestRelease, updateStatus } from "./updates";
+import { contactFilterClauses } from "./contactfilter";
 import { createJob, personalize, runJob, sendDelayMs, type SendJob } from "./sendjob";
 import { serviceState, startService, stopService, wahaKey } from "./waha";
 import { findDuplicates, type DupeRow } from "./dupes";
@@ -44,8 +45,7 @@ app.get("/api/candidates", async (request) => {
   }
   if (category) { where.push("category = ?"); params.push(category); }
   if (q.collection) { where.push("job_id = ?"); params.push(q.collection.slice(0, 64)); }
-  const hasColumn = ({ phone: "phone_raw", website: "website_url", email: "public_email" } as Record<string, string>)[q.has || ""];
-  if (hasColumn) where.push("COALESCE(" + hasColumn + ", '') != ''");
+  where.push(...contactFilterClauses(q.has));
   if (status) { where.push("review_status = ?"); params.push(status); }
   const clause = where.join(" AND ");
   const total = (db.prepare("SELECT COUNT(*) AS count FROM candidates WHERE " + clause).get(...params) as { count: number }).count;
@@ -70,8 +70,7 @@ app.get("/api/candidates/export", async (request, reply) => {
   }
   if (category) { where.push("category = ?"); params.push(category); }
   if (q.collection) { where.push("job_id = ?"); params.push(q.collection.slice(0, 64)); }
-  const hasColumn = ({ phone: "phone_raw", website: "website_url", email: "public_email" } as Record<string, string>)[q.has || ""];
-  if (hasColumn) where.push("COALESCE(" + hasColumn + ", '') != ''");
+  where.push(...contactFilterClauses(q.has));
   if (status) { where.push("review_status = ?"); params.push(status); }
   const order = q.sort === "name" ? "name COLLATE NOCASE ASC" : q.sort === "category" ? "category COLLATE NOCASE ASC" : "observed_at DESC";
   const statement = db.prepare("SELECT name,category,address,phone_raw,website_url,public_email,source_url,review_status FROM candidates WHERE " + where.join(" AND ") + " ORDER BY " + order);
@@ -415,7 +414,6 @@ app.get("/api/whatsapp/status", async () => {
 });
 // ---- WhatsApp sending via WAHA: select businesses, press one button, a queue sends them one by one ----
 const SEND_GAP_SECONDS = Math.max(5, Number(process.env.RUMIREACH_SEND_GAP_SECONDS) || 20);
-const DAILY_SEND_LIMIT = Math.max(1, Number(process.env.RUMIREACH_DAILY_SEND_LIMIT) || 50);
 type OutreachImage = { mimetype: string; filename: string; data: string };
 function parseOutreachImage(input: { data?: string; mimetype?: string; filename?: string } | undefined): { image?: OutreachImage; error?: string; code?: number } {
   if (!input) return {};
@@ -456,8 +454,6 @@ app.post("/api/whatsapp/send", async (request, reply) => {
 
   const job = createJob(randomUUID(), [...rows.values()].map(row => ({ id: row.id, name: row.name || "Unnamed business" })));
   currentJob = job; cancelRequested = false;
-  const countSentToday = db.prepare("SELECT COUNT(*) AS count FROM whatsapp_send_log WHERE status='sent' AND sent_at>=?");
-  const sentRecently = db.prepare("SELECT 1 FROM whatsapp_send_log WHERE candidate_id=? AND status='sent' AND sent_at>=? LIMIT 1");
   const logSend = db.prepare("INSERT INTO whatsapp_send_log (id,candidate_id,phone_e164,provider_message_id,status,error_message,sent_at) VALUES (?,?,?,?,?,?,?)");
   const markContacted = db.prepare("UPDATE candidates SET review_status='contacted' WHERE id=?");
 
@@ -465,9 +461,7 @@ app.post("/api/whatsapp/send", async (request, reply) => {
     const row = rows.get(item.id)!;
     const phone = normalizeWhatsAppNumber(row.phone_raw || "");
     if (!phone) return { status: "skipped", note: "No usable phone number" };
-    const now = new Date(); const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
-    if (sentRecently.get(item.id, new Date(now.getTime() - 86_400_000).toISOString())) return { status: "skipped", note: "Already messaged in the last 24 hours" };
-    if ((countSentToday.get(dayStart.toISOString()) as { count: number }).count >= DAILY_SEND_LIMIT) return { status: "skipped", note: "Daily limit of " + DAILY_SEND_LIMIT + " messages reached", stop: true };
+    const now = new Date();
     const text = personalize(template, row.name, row.category);
     try {
       const payload = image ? { session: WAHA_SESSION, chatId: phone + "@c.us", file: image, caption: text } : { session: WAHA_SESSION, chatId: phone + "@c.us", text };
@@ -480,7 +474,7 @@ app.post("/api/whatsapp/send", async (request, reply) => {
   }, { gapMs: () => sendDelayMs(SEND_GAP_SECONDS), sleep, cancelled: () => cancelRequested }).catch(() => { job.state = "done"; });
   return reply.code(202).send(job);
 });
-app.get("/api/whatsapp/send/current", async () => ({ job: currentJob, gapSeconds: SEND_GAP_SECONDS, dailyLimit: DAILY_SEND_LIMIT }));
+app.get("/api/whatsapp/send/current", async () => ({ job: currentJob, gapSeconds: SEND_GAP_SECONDS }));
 app.post("/api/whatsapp/send/cancel", async () => { cancelRequested = true; return { ok: true }; });
 app.get("/api/profiles", async () => db.prepare("SELECT p.id,p.canonical_name,p.category,p.address,p.phone_raw,p.website_url,p.public_email,p.created_at,p.updated_at,COUNT(s.candidate_id) AS source_count FROM business_profiles p LEFT JOIN business_profile_sources s ON s.profile_id=p.id GROUP BY p.id ORDER BY p.updated_at DESC LIMIT 500").all());
 app.get("/api/candidates/:id/provenance", async (request, reply) => {

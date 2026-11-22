@@ -53,7 +53,7 @@ Configure the API process environment (never the browser) with:
 - `WAHA_SESSION=default`
 - `WAHA_API_KEY=<your WAHA API key>`
 
-Start WAHA locally, pair its session with the WhatsApp account, then restart the RumiReach API. Only localhost WAHA endpoints are accepted. Sending is paced by default at about 20 s (plus random jitter) between messages, at most 50 per local day and one message per business per 24 hours. Tune with `RUMIREACH_SEND_GAP_SECONDS` and `RUMIREACH_DAILY_SEND_LIMIT`. WAHA is an unofficial WhatsApp Web integration, so account restrictions are possible; for supported business messaging use the official Meta WhatsApp Cloud API.
+Start WAHA locally, pair its session with the WhatsApp account, then restart the RumiReach API. Only localhost WAHA endpoints are accepted. Messages are sent one by one with a pause of about 20 s (plus random jitter) between them; there is no daily cap or per-contact block. Tune the pause with `RUMIREACH_SEND_GAP_SECONDS`. WAHA is an unofficial WhatsApp Web integration, so account restrictions are possible; for supported business messaging use the official Meta WhatsApp Cloud API.
 
 ## Data-use responsibility
 
