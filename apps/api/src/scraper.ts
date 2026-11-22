@@ -12,11 +12,14 @@ import { IMPORT_SOURCE, createImportSession, importSessions, insertRows, type Im
  * and imports its CSV output through the normal RumiReach import pipeline.
  */
 
-export const MAX_QUERIES = 200;
+/** Total searches per run (keywords × places). Generous by default; raise with RUMIREACH_MAX_SEARCHES. */
+export const MAX_QUERIES = Math.max(1, Number(process.env.RUMIREACH_MAX_SEARCHES) || 5000);
 export const MAX_CITIES_DEFAULT = 10;
 export const MAX_CITIES_LIMIT = 50;
 const DOCKER_IMAGE = process.env.RUMIREACH_SCRAPER_IMAGE || "gosom/google-maps-scraper";
-const MAX_RUN_MINUTES = Math.max(1, Number(process.env.RUMIREACH_SCRAPE_MAX_MINUTES) || 120);
+const MAX_RUN_MINUTES_ENV = Number(process.env.RUMIREACH_SCRAPE_MAX_MINUTES) || 0;
+/** Time budget for a run: the configured limit, or 2 minutes per search (at least 2 hours, at most 3 days). */
+const maxRunMinutes = (searches: number) => MAX_RUN_MINUTES_ENV > 0 ? MAX_RUN_MINUTES_ENV : Math.min(4320, Math.max(120, searches * 2));
 const CONCURRENCY = Math.min(8, Math.max(1, Number(process.env.RUMIREACH_SCRAPE_CONCURRENCY) || 2));
 const scrapesDir = join(dataDir, "scrapes");
 const WORKSPACE_RETENTION_HOURS = Math.max(
@@ -151,7 +154,7 @@ export async function startScrape(req: ScrapeRequest, meta: { country: string; s
   run.child = child;
   child.stdout.on("data", data => pushLog(run, String(data)));
   child.stderr.on("data", data => pushLog(run, String(data)));
-  run.timer = setTimeout(() => { pushLog(run, "Time limit reached; stopping."); run.cancelled = true; child.kill(); }, MAX_RUN_MINUTES * 60_000);
+  run.timer = setTimeout(() => { pushLog(run, "Time limit reached; stopping."); run.cancelled = true; child.kill(); }, maxRunMinutes(queries.length) * 60_000);
   child.on("error", error => void finish(id, run, resultsFile, queries, { ...meta, name }, null, error.message));
   child.on("close", code => void finish(id, run, resultsFile, queries, { ...meta, name }, code));
   return { id, queryCount: queries.length, queries: queries.slice(0, 5) };

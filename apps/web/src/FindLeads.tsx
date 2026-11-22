@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 type Country = { code: string; name: string; stateCount: number };
 type GeoState = { id: string; name: string; cityCount: number };
 type Run = { id: string; name: string | null; collectionId: string | null; keywords: string; country: string; state: string | null; city: string | null; queryCount: number; runner: string; status: string; imported: number; duplicates: number; error: string | null; createdAt: string; log: string[]; elapsedSeconds: number | null };
-type Status = { runner: { available: boolean; mode: string; hint: string }; maxCities: number; defaultCities: number };
+type Status = { runner: { available: boolean; mode: string; hint: string }; maxCities: number; defaultCities: number; maxSearches?: number };
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -41,6 +41,7 @@ export default function FindLeads({ onImported, onOpenCollection }: { onImported
   const stateName = states.find(item => item.id === stateId)?.name;
   const cityCount = city ? 1 : stateId ? Math.min(maxCities, cities.length) : 0;
   const searchCount = keywordList.length * Math.max(1, cityCount);
+  const maxSearches = status?.maxSearches ?? 5000;
   const active = runs.find(isActive);
 
   useEffect(() => {
@@ -104,15 +105,15 @@ export default function FindLeads({ onImported, onOpenCollection }: { onImported
     catch (reason) { setError(reason instanceof Error ? reason.message : "Could not cancel."); }
   }
 
-  const canStart = !!status?.runner.available && !active && !busy && authorized && !!country && keywordList.length > 0 && searchCount <= 200;
+  const canStart = !!status?.runner.available && !active && !busy && authorized && !!country && keywordList.length > 0 && searchCount <= maxSearches;
 
   return <section className="panel find-panel" id="find">
     <div className="section-heading"><div><span className="section-kicker">01 / FIND LEADS</span><h2>Find businesses automatically</h2><p>Type what you are looking for, pick a location, and RumiReach collects matching businesses from Google Maps straight into your directory.</p></div><span className="format-badge">AUTO SCRAPE</span></div>
     {status && !status.runner.available && <div className="inline-error">{status.runner.hint}</div>}
     <div className="find-grid">
       <label className="find-field find-wide"><span>What are you looking for?</span>
-        <textarea value={keywords} onChange={event => setKeywords(event.target.value)} placeholder={"dentist\nrestaurant, cafe"} rows={3}/>
-        <small>One search term per line or separated by commas, e.g. “dentist”, “gym”, “real estate agent”.</small></label>
+        <textarea value={keywords} onChange={event => setKeywords(event.target.value)} placeholder={"dentist\nrestaurant, cafe\nAdd as many as you like: one per line or separated by commas"} rows={6}/>
+        <small>{keywordList.length ? keywordList.length.toLocaleString() + " search term" + (keywordList.length === 1 ? "" : "s") + " · no limit on terms, each one is searched in every chosen place." : "One search term per line or separated by commas, e.g. “dentist”, “gym”, “real estate agent”."}</small></label>
       <label className="find-field find-wide"><span>Save this search as (optional)</span>
         <input value={name} maxLength={100} onChange={event => setName(event.target.value)} placeholder="e.g. Lahore dentists – Nov"/><small>Results are saved as a named collection you can reopen, export or delete later. Left empty, a name is made from your search.</small></label>
       <label className="find-field"><span>Country</span>
@@ -131,7 +132,7 @@ export default function FindLeads({ onImported, onOpenCollection }: { onImported
     {geoNote && <div className="import-progress">{geoNote}</div>}
     {error && <div className="inline-error">{error}</div>}
     <div className="import-submit">
-      <span className="selected-file">{country ? (searchCount ? searchCount + " search" + (searchCount === 1 ? "" : "es") + " will run" : "Add a search term") : "Choose a location to begin"}{searchCount > 200 ? " — too many, reduce terms or cities" : ""}</span>
+      <span className="selected-file">{country ? (searchCount ? searchCount + " search" + (searchCount === 1 ? "" : "es") + " will run" : "Add a search term") : "Choose a location to begin"}{searchCount > maxSearches ? " — over the limit of " + maxSearches.toLocaleString() + ", reduce terms or cities" : ""}</span>
       <button className="primary-button" disabled={!canStart} onClick={() => void start()}>{busy ? "Starting…" : "Start finding leads"} <span>→</span></button>
     </div>
     {runs.length > 0 && <div className="find-runs"><h3>Recent runs</h3>{runs.map(run => <div key={run.id} className={"find-run find-" + run.status}>

@@ -121,3 +121,7 @@ RumiReach now runs WAHA with the lightweight `NOWEB` engine by default (no Chrom
 
 After pulling this change run `docker compose up -d` so the WAHA container picks up the new engine setting. To go back to the browser engine set `WAHA_ENGINE=WEBJS` in `.env`. If you still see problems, check `docker compose logs waha`.
 
+## Search limits
+
+Find leads has no limit on the number of search terms. Every term is searched in every chosen place, up to 5,000 searches per run by default (`RUMIREACH_MAX_SEARCHES` raises it). A run may take up to 2 minutes per search (minimum 2 hours); set `RUMIREACH_SCRAPE_MAX_MINUTES` for a fixed limit.
+

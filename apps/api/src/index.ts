@@ -14,7 +14,7 @@ import { serviceState, startService, stopService, wahaKey } from "./waha";
 import { findDuplicates, type DupeRow } from "./dupes";
 import { parseCsv } from "./csv";
 import { ensureGeoData, geoStatus, getCountry, listCities, listCountries, listStates } from "./geo";
-import { MAX_CITIES_DEFAULT, MAX_CITIES_LIMIT, activeRunId, cancelScrape, listScrapes, resolveRunner, startScrape } from "./scraper";
+import { MAX_CITIES_DEFAULT, MAX_CITIES_LIMIT, MAX_QUERIES, activeRunId, cancelScrape, listScrapes, resolveRunner, startScrape } from "./scraper";
 import { IMPORT_SOURCE, createImportSession, importSessions, insertRows, type ImportRow, type ImportSession } from "./importer";
 import { ensureMatchingSchema } from "./matching";
 
@@ -164,7 +164,7 @@ function geoFailure(reply: { code: (n: number) => { send: (b: unknown) => unknow
   return reply.code(503).send({ error: (error instanceof Error ? error.message : "Location data is unavailable.") + " Check your internet connection and try again." });
 }
 
-app.get("/api/scrape/status", async () => ({ runner: resolveRunner(), geo: geoStatus(), maxCities: MAX_CITIES_LIMIT, defaultCities: MAX_CITIES_DEFAULT }));
+app.get("/api/scrape/status", async () => ({ runner: resolveRunner(), geo: geoStatus(), maxCities: MAX_CITIES_LIMIT, defaultCities: MAX_CITIES_DEFAULT, maxSearches: MAX_QUERIES }));
 
 app.get("/api/geo/countries", async (_request, reply) => {
   try { return { countries: await listCountries() }; } catch (error) { return geoFailure(reply, error); }
@@ -185,7 +185,7 @@ app.get("/api/geo/countries/:country/states/:state/cities", async (request, repl
 });
 
 const ScrapeBody = z.object({
-  keywords: z.array(z.string().trim().min(2).max(80)).min(1).max(10),
+  keywords: z.array(z.string().trim().min(2).max(80)).min(1).max(1000),
   country: z.string().regex(/^[A-Za-z]{2}$/),
   state: z.string().max(20).optional(),
   city: z.string().trim().max(120).optional(),
